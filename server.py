@@ -203,7 +203,9 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...)):
         try:
             if robot_instance:
                 robot_instance.shutdown()
-            active_robots.pop(user_id, None)
+            # 只有当 active_robots 中的实例还是当前这个时才删除
+            if active_robots.get(user_id) and active_robots[user_id][0] is robot_instance:
+                active_robots.pop(user_id, None)
             logger.info(f"资源已清理，WebSocket 连接关闭: user_id={user_id}")
         except Exception as e:
             logger.error(f"清理资源时出错: {e}")

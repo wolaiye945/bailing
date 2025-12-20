@@ -769,11 +769,13 @@
 
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                websocket = new WebSocket(`${protocol}//${window.location.host}/ws?user_id=${userId}`);
+                const currentWebsocket = new WebSocket(`${protocol}//${window.location.host}/ws?user_id=${userId}`);
+                websocket = currentWebsocket;
 
                 websocket.binaryType = 'arraybuffer';
 
                 websocket.onopen = async () => {
+                    if (websocket !== currentWebsocket) return;
                     reconnectAttempts = 0;
                     updateStatus("connected", "已连接，准备录音...");
                     addLog("WebSocket连接已建立");
@@ -791,6 +793,7 @@
                 };
 
                 websocket.onmessage = async (event) => {
+                    if (websocket !== currentWebsocket) return;
                     if (typeof event.data === 'string') {
                         try {
                             const message = JSON.parse(event.data);
@@ -814,11 +817,17 @@
                 };
 
                 websocket.onerror = (error) => {
+                    if (websocket !== currentWebsocket) return;
                     addLog(`WebSocket错误: ${error}`);
                     updateStatus("disconnected", "连接错误");
                 };
 
                 websocket.onclose = (event) => {
+                    if (websocket !== currentWebsocket) {
+                        addLog("旧连接已关闭");
+                        return;
+                    }
+                    
                     addLog(`连接已关闭 (代码: ${event.code})`);
                     if (recorder) recorder.stop();
                     if (player) player.stopCurrent(); // 确保停止时也停止当前播放

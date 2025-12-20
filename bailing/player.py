@@ -40,7 +40,10 @@ class AbstractPlayer(object):
 
     def _playing(self):
         while not self._stop_event.is_set():
-            data = self.play_queue.get()
+            try:
+                data = self.play_queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
             self.is_playing = True
             try:
                 self.do_playing(data)
