@@ -758,7 +758,11 @@
         }
 
         async function connect() {
-            if (isManuallyStopped) return;
+            // isManuallyStopped 只在 connect 内部作为判断，确保点击开始时能重置它
+            if (isManuallyStopped) {
+                addLog("检测到手动停止状态，取消自动连接", 'warning');
+                return;
+            }
             
             updateStatus("connecting", `连接中 (${reconnectAttempts + 1}/${maxReconnectAttempts})...`);
             addLog(`尝试连接到服务器 (第 ${reconnectAttempts + 1} 次)...`);
@@ -817,6 +821,7 @@
                 websocket.onclose = (event) => {
                     addLog(`连接已关闭 (代码: ${event.code})`);
                     if (recorder) recorder.stop();
+                    if (player) player.stopCurrent(); // 确保停止时也停止当前播放
                     
                     if (!isManuallyStopped && reconnectAttempts < maxReconnectAttempts) {
                         reconnectAttempts++;
@@ -1296,6 +1301,12 @@
         startBtn.addEventListener('click', async () => {
             isManuallyStopped = false;
             reconnectAttempts = 0;
+            if (websocket) {
+                websocket.close();
+            }
+            if (recorder) {
+                recorder.stop();
+            }
             connect();
         });
 
