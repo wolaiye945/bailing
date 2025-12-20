@@ -3,6 +3,7 @@ import uuid
 import wave
 from abc import ABC, abstractmethod
 import logging
+import threading
 from datetime import datetime
 
 from funasr import AutoModel
@@ -34,17 +35,23 @@ class ASR(ABC):
 
 
 class FunASR(ASR):
+    _model_instance = None
+    _instance_lock = threading.Lock()
+
     def __init__(self, config):
         self.model_dir = config.get("model_dir")
         self.output_dir = config.get("output_file")
 
-        self.model = AutoModel(
-            model=self.model_dir,
-            vad_kwargs={"max_single_segment_time": 30000},
-            disable_update=True,
-            hub="hf"
-            # device="cuda:0",  # 如果有GPU，可以解开这行并指定设备
-        )
+        with FunASR._instance_lock:
+            if FunASR._model_instance is None:
+                logger.info(f"Loading FunASR model from {self.model_dir}...")
+                FunASR._model_instance = AutoModel(
+                    model=self.model_dir,
+                    vad_kwargs={"max_single_segment_time": 30000},
+                    disable_update=True,
+                    hub="hf"
+                )
+        self.model = FunASR._model_instance
 
     def recognizer(self, stream_in_audio):
         try:

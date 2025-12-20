@@ -8,13 +8,10 @@ import warnings
 import requests
 from bs4 import BeautifulSoup
 from cachetools import TTLCache
-from duckduckgo_search import AsyncDDGS, DDGS
+from duckduckgo_search import DDGS
 
 from plugins.registry import register_function, ToolType
 from plugins.registry import ActionResponse, Action
-
-
-from duckduckgo_search import DDGS
 
 class BaseSearch:
 
@@ -68,9 +65,10 @@ class DuckDuckGoSearch(BaseSearch):
     async def asearch(self, query: str, max_retry: int = 3) -> dict:
         for attempt in range(max_retry):
             try:
-                ddgs = AsyncDDGS(timeout=self.timeout, proxy=self.proxy)
-                response = await ddgs.text(query.strip("'"), max_results=10)
-                return self._parse_response(response)
+                # 在 7.x 版本中，DDGS 是同步的，可以使用 to_thread 运行
+                with DDGS(timeout=self.timeout, proxy=self.proxy) as ddgs:
+                    response = await asyncio.to_thread(ddgs.text, query.strip("'"), max_results=10)
+                    return self._parse_response(response)
             except Exception as e:
                 if isinstance(e, asyncio.TimeoutError):
                     logging.exception('Request to DDGS timed out.')
@@ -132,10 +130,14 @@ def web_search(query, engine="baidu"):
         url = 'https://www.google.com/search'
     print(url)
     # 发送 GET 请求
-    response = requests.get(url, params=params, headers=headers)
-
-    # 检查请求是否成功
-    if response.status_code == 200:
-        return ActionResponse(Action.REQLLM, response.text, None)
-    else:
-        return ActionResponse(Action.REQLLM, "搜索失败", None)
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        print(f"Response status: {response.status_code}")
+        # 检查请求是否成功
+        if response.status_code == 200:
+            return ActionResponse(Action.REQLLM, response.text, None)
+        else:
+            return ActionResponse(Action.REQLLM, f"搜索失败，状态码: {response.status_code}", None)
+    except Exception as e:
+        print(f"Request error: {e}")
+        return ActionResponse(Action.REQLLM, f"搜索出错: {e}", None)

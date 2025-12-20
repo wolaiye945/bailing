@@ -1,3 +1,8 @@
+# Local configuration files
+config/config.yaml
+config/config - 副本.yaml
+**/config.yaml
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -13,6 +18,12 @@ tmp/
 asset/
 models/SenseVoice*
 plugins/functions/web_search_v1.py
+tts-*.wav
+tts-*.wav.wav
+*.wav
+*.mp3
+*.pcm
+dialogue_history/
 
 # Distribution / packaging
 .Python

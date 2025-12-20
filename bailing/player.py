@@ -27,10 +27,16 @@ class AbstractPlayer(object):
 
     @staticmethod
     def to_wav(audio_file):
+        if audio_file.endswith(".wav"):
+            return audio_file
         tmp_file = audio_file + ".wav"
-        wav_file = AudioSegment.from_file(audio_file)
-        wav_file.export(tmp_file, format="wav")
-        return tmp_file
+        try:
+            wav_file = AudioSegment.from_file(audio_file)
+            wav_file.export(tmp_file, format="wav")
+            return tmp_file
+        except Exception as e:
+            logger.error(f"转换音频到 wav 失败: {e}")
+            return audio_file
 
     def _playing(self):
         while not self._stop_event.is_set():

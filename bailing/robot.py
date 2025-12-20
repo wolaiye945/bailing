@@ -2,11 +2,18 @@ import json
 import queue
 import threading
 import uuid
+import os
 from abc import ABC
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import argparse
 import time
+
+try:
+    from static_ffmpeg import add_paths
+    add_paths()
+except ImportError:
+    pass
 
 from bailing import (
     recorder,
@@ -18,7 +25,7 @@ from bailing import (
     memory
 )
 from bailing.dialogue import Message, Dialogue
-from bailing.utils import is_interrupt, read_config, is_segment, extract_json_from_string, is_segment_sentence
+from bailing.utils import is_interrupt, read_config, is_segment, extract_json_from_string, is_segment_sentence, remove_think_tags, format_think_sections
 from bailing.prompt import sys_prompt
 
 from plugins.registry import Action
@@ -63,8 +70,14 @@ class Robot(ABC):
             config["Player"][config["selected_module"]["Player"]]
         )
 
-        self.memory = memory.Memory(config.get("Memory"))
-        self.prompt = sys_prompt.replace("{memory}", self.memory.get_memory()).strip()
+        memory_config = config.get("Memory")
+        if memory_config and memory_config.get("enabled", True):
+            self.memory = memory.Memory(memory_config)
+            self.memory_text = self.memory.get_memory()
+        else:
+            self.memory = None
+            self.memory_text = ""
+        self.prompt = sys_prompt.replace("{memory}", self.memory_text).strip()
 
         self.vad_queue = queue.Queue()
         self.dialogue = Dialogue(config["Memory"]["dialogue_history_path"])
@@ -132,6 +145,7 @@ class Robot(ABC):
                         continue
                     if tts_file is None:
                         continue
+                    logger.debug(f"_tts_priority: 准备播放 {tts_file}")
                     self.player.play(tts_file)
                 except Exception as e:
                     logger.error(f"tts_priority priority_thread: {e}")
@@ -241,7 +255,6 @@ class Robot(ABC):
         #    return None
         # 开始播放
         # self.player.play(tts_file)
-        #return True
         return tts_file
 
     def chat_tool(self, query):
@@ -262,11 +275,11 @@ class Robot(ABC):
         function_id = None
         function_arguments = ""
         content_arguments = ""
+        
         for chunk in llm_responses:
             content, tools_call = chunk
-            if content is not None and len(content)>0:
-                if len(response_message)<=0 and content=="```":
-                    tool_call_flag = True
+            
+            # 尽早检测工具调用
             if tools_call is not None:
                 tool_call_flag = True
                 if tools_call[0].id is not None:
@@ -275,84 +288,115 @@ class Robot(ABC):
                     function_name = tools_call[0].function.name
                 if tools_call[0].function.arguments is not None:
                     function_arguments += tools_call[0].function.arguments
+            
             if content is not None and len(content) > 0:
+                # 检查是否包含代码块标记，这通常意味着工具调用（对于某些模型）
+                if "```" in content or (len(response_message) == 0 and content.strip().startswith("{")):
+                    tool_call_flag = True
+                
                 if tool_call_flag:
-                    content_arguments+=content
+                    content_arguments += content
                 else:
                     response_message.append(content)
                     response_message_concat = "".join(response_message)
-                    end_time = time.time()  # 记录结束时间
-                    logger.debug(f"大模型返回时间时间tool: {end_time - start_time} 秒, 生成token={content}")
-                    flag_segment, index_segment = is_segment_sentence(response_message_concat, start)
-                    logger.debug(
-                        f"大模型返回时间时间tool: flag_segment={flag_segment} 秒, index_segment={index_segment}")
+                    
+                    # 过滤掉思考部分再进行分句
+                    clean_response_concat = remove_think_tags(response_message_concat)
+                    
+                    # 检查 clean_response_concat 是否包含可能触发工具调用的关键字
+                    if "```" in clean_response_concat:
+                        tool_call_flag = True
+                        # 将之前错误识别为文本的部分移到 content_arguments
+                        content_arguments = clean_response_concat[start:]
+                        continue
 
+                    end_time = time.time()
+                    logger.debug(f"大模型返回时间: {end_time - start_time} 秒, token={content}")
+                    
+                    flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
                     if flag_segment:
-                        segment_text = response_message_concat[start:index_segment + 1]
-                        # 为了保证语音的连贯，至少2个字才转tts
+                        segment_text = clean_response_concat[start:index_segment + 1]
+                        
+                        # 再次检查 segment_text 是否包含工具调用标记
+                        if "```" in segment_text:
+                            tool_call_flag = True
+                            content_arguments = segment_text
+                            continue
 
                         if len(segment_text) <= max(2, start):
                             continue
+                            
                         future = self.executor.submit(self.speak_and_play, segment_text)
                         self.tts_queue.put(future)
-                        # futures.append(future)
-                        start = index_segment + 1  # len(response_message)
+                        start = index_segment + 1
 
         if not tool_call_flag:
-            response_message_concat = "".join(response_message)
-            if start < len(response_message_concat):
-                segment_text = response_message_concat[start:]
-                future = self.executor.submit(self.speak_and_play, segment_text)
-                self.tts_queue.put(future)
+            clean_response_concat = remove_think_tags("".join(response_message))
+            if start < len(clean_response_concat):
+                segment_text = clean_response_concat[start:]
+                # 确保最后一部分也不是工具调用
+                if "```" not in segment_text:
+                    future = self.executor.submit(self.speak_and_play, segment_text)
+                    self.tts_queue.put(future)
         else:
             # 处理函数调用
             if function_id is None:
-                a = extract_json_from_string(content_arguments)
-                if a is not None:
-                    content_arguments_json = json.loads(a)
-                    function_name = content_arguments_json["function_name"]
-                    function_arguments = json.dumps(content_arguments_json["args"], ensure_ascii=False)
-                    function_id = str(uuid.uuid4().hex)
+                json_str = extract_json_from_string(content_arguments)
+                if json_str is not None:
+                    try:
+                        content_arguments_json = json.loads(json_str)
+                        function_name = content_arguments_json.get("function_name")
+                        function_arguments = content_arguments_json.get("args", {})
+                        function_id = str(uuid.uuid4().hex)
+                    except Exception as e:
+                        logger.error(f"解析工具调用 JSON 失败: {e}")
+                        return response_message
                 else:
-                    return []
-                function_arguments = json.loads(function_arguments)
-            logger.info(f"function_name={function_name}, function_id={function_id}, function_arguments={function_arguments}")
+                    return response_message
+            
+            logger.info(f"工具调用: name={function_name}, args={function_arguments}")
+            
             # 调用工具
             result = self.task_manager.tool_call(function_name, function_arguments)
-            if result.action == Action.NOTFOUND: # = (0, "没有找到函数")
-                logger.error(f"没有找到函数{function_name}")
-                return []
-            elif result.action == Action.NONE: # = (1,  "啥也不干")
-                return []
-            elif result.action == Action.RESPONSE: # = (2, "直接回复")
+            if result.action == Action.NOTFOUND:
+                logger.error(f"没有找到函数: {function_name}")
+                return response_message
+            elif result.action == Action.NONE:
+                return response_message
+            elif result.action == Action.RESPONSE:
                 future = self.executor.submit(self.speak_and_play, result.response)
                 self.tts_queue.put(future)
-                return [result.response]
-            elif result.action == Action.REQLLM: # = (3, "调用函数后再请求llm生成回复")
-                # 添加工具内容
+                response_message.append(f"\n工具执行结果: {result.response}")
+                return response_message
+            elif result.action == Action.REQLLM:
+                # 添加工具内容到对话上下文
                 self.dialogue.put(Message(role='assistant',
                                           tool_calls=[{"id": function_id, "function": {"arguments": json.dumps(function_arguments ,ensure_ascii=False),
                                                                                        "name": function_name},
                                                        "type": 'function', "index": 0}]))
-
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.result))
-                self.chat_tool(query)
-            elif result.action == Action.ADDSYSTEM: # = (4, "添加系统prompt到对话中去")
+                # 递归调用以处理后续回复
+                sub_response = self.chat_tool(query)
+                if sub_response:
+                    response_message.extend(sub_response)
+            elif result.action == Action.ADDSYSTEM:
                 self.dialogue.put(Message(**result.result))
-                return []
-            elif result.action == Action.ADDSYSTEMSPEAK: # = (5, "添加系统prompt到对话中去&主动说话")
+                return response_message
+            elif result.action == Action.ADDSYSTEMSPEAK:
                 self.dialogue.put(Message(role='assistant',
                                           tool_calls=[{"id": function_id, "function": {
                                               "arguments": json.dumps(function_arguments, ensure_ascii=False),
                                               "name": function_name},
                                                        "type": 'function', "index": 0}]))
-
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.response))
                 self.dialogue.put(Message(**result.result))
                 self.dialogue.put(Message(role="user", content="ok"))
-                return self.chat_tool(query)
+                sub_response = self.chat_tool(query)
+                if sub_response:
+                    response_message.extend(sub_response)
             else:
-                logger.error(f"not found action type: {result.action}")
+                logger.error(f"未知的 Action 类型: {result.action}")
+        
         return response_message
 
     def chat(self, query):
@@ -376,13 +420,18 @@ class Robot(ABC):
             for content in llm_responses:
                 response_message.append(content)
                 response_message_concat = "".join(response_message)
+                
+                # 过滤掉思考部分再进行分句
+                clean_response_concat = remove_think_tags(response_message_concat)
+                
                 end_time = time.time()  # 记录结束时间
                 logger.debug(f"大模型返回时间时间tool: {end_time - start_time} 秒, 生成token={content}")
-                flag_segment, index_segment = is_segment_sentence(response_message_concat, start)
+                
+                flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
                 logger.debug(
                     f"大模型返回时间时间tool: flag_segment={flag_segment} 秒, index_segment={index_segment}")
                 if flag_segment:
-                    segment_text = response_message_concat[start:index_segment + 1]
+                    segment_text = clean_response_concat[start:index_segment + 1]
                     # 为了保证语音的连贯，至少2个字才转tts
 
                     if len(segment_text) <= max(2, start):
@@ -393,9 +442,9 @@ class Robot(ABC):
                     start = index_segment + 1  # len(response_message)
 
             # 处理剩余的响应
-            response_message_concat = "".join(response_message)
-            if start < len(response_message_concat):
-                segment_text = response_message_concat[start:]
+            clean_response_concat = remove_think_tags("".join(response_message))
+            if start < len(clean_response_concat):
+                segment_text = clean_response_concat[start:]
                 future = self.executor.submit(self.speak_and_play, segment_text)
                 self.tts_queue.put(future)
             # 等待所有 TTS 任务完成
@@ -410,9 +459,12 @@ class Robot(ABC):
             """
         self.chat_lock = False
         # 更新对话
+        full_response = "".join(response_message)
+        formatted_response = format_think_sections(full_response)
+        
         if self.callback:
-            self.callback({"role": "assistant", "content": "".join(response_message)})
-        self.dialogue.put(Message(role="assistant", content="".join(response_message)))
+            self.callback({"role": "assistant", "content": formatted_response})
+        self.dialogue.put(Message(role="assistant", content=full_response))
         self.dialogue.dump_dialogue()
         logger.debug(json.dumps(self.dialogue.get_llm_dialogue(), indent=4, ensure_ascii=False))
         return True

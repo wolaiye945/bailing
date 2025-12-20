@@ -54,5 +54,41 @@ def extract_json_from_string(input_string):
     pattern = r'(\{.*\})'
     match = re.search(pattern, input_string)
     if match:
-        return match.group(1)  # 返回提取的 JSON 字符串
+        return match.group(1)  # 返回提取 of the extracted JSON string
     return None
+
+def remove_think_tags(text):
+    """移除 <think>...</think> 标签及其内容，包括未闭合的标签内容"""
+    if text is None:
+        return ""
+    # 先移除所有已闭合的标签
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # 再移除可能存在的未闭合标签（从 <think> 开始到最后）
+    text = re.sub(r'<think>.*', '', text, flags=re.DOTALL)
+    return text.strip()
+
+def format_think_sections(text):
+    """将 <think> 标签转换为更易读的格式（例如 Markdown 引用块）"""
+    if text is None:
+        return ""
+    
+    def replace_think(match):
+        content = match.group(1).strip()
+        if not content:
+            return ""
+        # 将内容每一行都加上引用符号
+        quoted_content = "\n".join([f"> {line}" for line in content.split("\n")])
+        return f"\n\n> **思考过程**\n{quoted_content}\n\n"
+
+    # 处理闭合标签
+    text = re.sub(r'<think>(.*?)</think>', replace_think, text, flags=re.DOTALL)
+    
+    # 处理未闭合标签（如果是流式输出中）
+    if '<think>' in text:
+        parts = text.split('<think>', 1)
+        before = parts[0]
+        after = parts[1]
+        quoted_after = "\n".join([f"> {line}" for line in after.split("\n")])
+        text = f"{before}\n\n> **思考过程 (正在思考...)**\n{quoted_after}"
+        
+    return text.strip()

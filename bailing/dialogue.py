@@ -25,7 +25,7 @@ class Dialogue:
         self.dialogue_history_path = dialogue_history_path
         self.dialogue: List[Message] = []
         # 获取当前时间
-        self.current_time  = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.current_time  = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
     def put(self, message: Message):
         self.dialogue.append(message)

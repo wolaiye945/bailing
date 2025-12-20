@@ -39,14 +39,13 @@ VAD:
 
 LLM:
   OpenAILLM:
-    model_name: deepseek-chat
-    url: https://api.deepseek.com
-    api_key:
+    model_name: your-model-name
+    url: your-api-url
+    api_key: your-api-key
   OllamaLLM:
-    model_name: qwen-chat
-    url: http://localhost:11434/api/chat # 注意后缀是api/chat
-    api_key:
-
+    model_name: your-model-name
+    url: your-api-url
+    api_key: your-api-key
 
 TTS:
   MacTTS:
@@ -76,6 +75,7 @@ Player:
   WebSocketPlayer: null
 
 Rag:
+  enabled: false
   doc_path: documents/
   emb_model: models/bge-small-zh
   model_name: deepseek-chat
@@ -83,6 +83,7 @@ Rag:
   api_key: null
 
 Memory:
+  enabled: false
   dialogue_history_path: tmp/
   memory_file: tmp/memory.json
   model_name: deepseek-chat
@@ -92,8 +93,3 @@ Memory:
 TaskManager:
   functions_call_name: plugins/function_calls_config.json
   aigc_manus_enabled: false
-
-
-
-
-

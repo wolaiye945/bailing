@@ -12,7 +12,9 @@ import argparse
 import json
 import logging
 import socket
-from typing import Dict, Tuple
+import shutil
+import re
+from typing import Dict, Tuple, List
 
 
 # 配置日志记录
@@ -79,6 +81,61 @@ app.add_middleware(
 
 
 
+@app.get("/temp_files")
+async def get_temp_files():
+    tmp_dir = "tmp"
+    if not os.path.exists(tmp_dir):
+        return {}
+    
+    result = {}
+    for date_dir in sorted(os.listdir(tmp_dir), reverse=True):
+        date_path = os.path.join(tmp_dir, date_dir)
+        if os.path.isdir(date_path) and re.match(r"\d{4}-\d{2}-\d{2}", date_dir):
+            files = []
+            for f in os.listdir(date_path):
+                f_path = os.path.join(date_path, f)
+                if os.path.isfile(f_path):
+                    files.append({
+                        "name": f,
+                        "size": os.path.getsize(f_path),
+                        "ctime": os.path.getctime(f_path)
+                    })
+            if files:
+                result[date_dir] = sorted(files, key=lambda x: x["ctime"], reverse=True)
+    return result
+
+@app.delete("/temp_files")
+async def delete_temp_files(files: List[str] = Query(...)):
+    tmp_dir = "tmp"
+    deleted_count = 0
+    for f_rel_path in files:
+        # 简单安全检查，防止路径穿越
+        if ".." in f_rel_path or f_rel_path.startswith("/") or f_rel_path.startswith("\\"):
+            continue
+            
+        full_path = os.path.join(tmp_dir, f_rel_path)
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            try:
+                os.remove(full_path)
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"删除文件失败 {full_path}: {e}")
+                
+    return {"status": "ok", "deleted_count": deleted_count}
+
+@app.delete("/temp_files/date/{date_str}")
+async def delete_date_files(date_str: str):
+    tmp_dir = "tmp"
+    date_path = os.path.join(tmp_dir, date_str)
+    if os.path.exists(date_path) and os.path.isdir(date_path):
+        try:
+            shutil.rmtree(date_path)
+            return {"status": "ok"}
+        except Exception as e:
+            logger.error(f"删除目录失败 {date_path}: {e}")
+            return {"status": "error", "message": str(e)}
+    return {"status": "not_found"}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...)):
     await websocket.accept()
@@ -142,12 +199,20 @@ if __name__ == "__main__":
     print(f"https://{lan_ip}:8000\n")
     # 生成自签名证书 (开发环境)
     # openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+    import os
+    ssl_keyfile = "./key.pem"
+    ssl_certfile = "./cert.pem"
+    if not os.path.exists(ssl_keyfile) or not os.path.exists(ssl_certfile):
+        ssl_keyfile = None
+        ssl_certfile = None
+        print("Warning: SSL certificates not found, starting in HTTP mode.")
+
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8000,
-        ssl_keyfile="./key.pem",  # 可选：添加自签名证书
-        ssl_certfile="./cert.pem",
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile,
         ws_ping_interval=20,
         ws_ping_timeout=30
     )

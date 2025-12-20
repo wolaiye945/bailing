@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import subprocess
+import threading
 import time
 import uuid
 from abc import ABC, ABCMeta, abstractmethod
@@ -31,7 +32,18 @@ class GTTS(AbstractTTS):
         self.lang = config.get("lang")
 
     def _generate_filename(self, extension=".aiff"):
-        return os.path.join(self.output_file, f"tts-{datetime.now().date()}@{uuid.uuid4().hex}{extension}")
+        # 确保 tmp 目录存在
+        tmp_dir = self.output_file if self.output_file else "tmp"
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+        
+        # 使用日期子目录
+        date_str = time.strftime("%Y-%m-%d")
+        date_dir = os.path.join(tmp_dir, date_str)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+            
+        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
 
     def _log_execution_time(self, start_time):
         end_time = time.time()
@@ -63,7 +75,18 @@ class MacTTS(AbstractTTS):
         self.output_file = config.get("output_file")
 
     def _generate_filename(self, extension=".aiff"):
-        return os.path.join(self.output_file, f"tts-{datetime.now().date()}@{uuid.uuid4().hex}{extension}")
+        # 确保 tmp 目录存在
+        tmp_dir = self.output_file if self.output_file else "tmp"
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+        
+        # 使用日期子目录
+        date_str = time.strftime("%Y-%m-%d")
+        date_dir = os.path.join(tmp_dir, date_str)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+            
+        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
 
     def _log_execution_time(self, start_time):
         end_time = time.time()
@@ -97,7 +120,18 @@ class EdgeTTS(AbstractTTS):
         self.voice = config.get("voice")
 
     def _generate_filename(self, extension=".wav"):
-        return os.path.join(self.output_file, f"tts-{datetime.now().date()}@{uuid.uuid4().hex}{extension}")
+        # 确保 tmp 目录存在
+        tmp_dir = self.output_file if self.output_file else "tmp"
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+        
+        # 使用日期子目录
+        date_str = time.strftime("%Y-%m-%d")
+        date_dir = os.path.join(tmp_dir, date_str)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+            
+        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
 
     def _log_execution_time(self, start_time):
         end_time = time.time()
@@ -128,7 +162,18 @@ class CHATTTS(AbstractTTS):
         self.rand_spk = self.chat.sample_random_speaker()
 
     def _generate_filename(self, extension=".wav"):
-        return os.path.join(self.output_file, f"tts-{datetime.now().date()}@{uuid.uuid4().hex}{extension}")
+        # 确保 tmp 目录存在
+        tmp_dir = self.output_file if self.output_file else "tmp"
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+        
+        # 使用日期子目录
+        date_str = time.strftime("%Y-%m-%d")
+        date_dir = os.path.join(tmp_dir, date_str)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+            
+        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
 
     def _log_execution_time(self, start_time):
         end_time = time.time()
@@ -200,6 +245,9 @@ class CHATTTS(AbstractTTS):
 
 
 class KOKOROTTS(AbstractTTS):
+    _model_instance = None
+    _instance_lock = threading.Lock()
+
     def __init__(self, config):
         """
         config keys:
@@ -211,7 +259,7 @@ class KOKOROTTS(AbstractTTS):
           - zero_padding: number of zeros between segments (default 5000)
         """
         self.repo_id      = config.get("repo_id", "hexgrad/Kokoro-82M-v1.1-zh")
-        self.output_dir   = config.get("output_dir", ".")
+        self.output_dir   = config.get("output_dir") or config.get("output_file") or "tmp"
         self.lang         = config.get("lang", "z")
         self.voice        = config.get("voice", "zf_001")
         self.sample_rate  = config.get("sample_rate", 24000)
@@ -220,9 +268,12 @@ class KOKOROTTS(AbstractTTS):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # load model if Chinese TTS
-        self.model = None
-        if self.lang == "z":
-            self.model = KModel(repo_id=self.repo_id).to(self.device).eval()
+        with KOKOROTTS._instance_lock:
+            if KOKOROTTS._model_instance is None:
+                if self.lang == "z":
+                    logger.info(f"Loading KOKOROTTS model from {self.repo_id}...")
+                    KOKOROTTS._model_instance = KModel(repo_id=self.repo_id).to(self.device).eval()
+        self.model = KOKOROTTS._model_instance
 
         # set up pipelines
         self._setup_pipelines()
@@ -251,8 +302,18 @@ class KOKOROTTS(AbstractTTS):
         )
 
     def _generate_filename(self, extension=".wav"):
-        fname = f"tts-{datetime.now().date()}@{uuid.uuid4().hex}{extension}"
-        return os.path.join(self.output_dir, fname)
+        # 确保 tmp 目录存在
+        tmp_dir = self.output_dir
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+        
+        # 使用日期子目录
+        date_str = time.strftime("%Y-%m-%d")
+        date_dir = os.path.join(tmp_dir, date_str)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+            
+        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
 
     def _log_execution_time(self, start_time):
         end_time = time.time()
@@ -270,29 +331,20 @@ class KOKOROTTS(AbstractTTS):
             speed = 1.0 - (len_ps - 83) / 500.0
         return speed * 1.1
 
-    def to_tts(self, text: str) -> str:
-        """
-        Generate TTS for `text`. Returns path to the combined WAV file.
-        """
-        output_file = self._generate_filename(".wav")
-        start_time = time.time()
-
+    def to_tts(self, text):
+        logger.debug(f"KOKOROTTS to_tts: {text}")
         try:
+            output_file = self._generate_filename(".wav")
             generator = self.pipeline(
-                text.replace("\n", " "),
-                voice=self.voice,
-                speed=self._speed_callable,
-                #split_pattern=r"\n+"
+                text, voice=self.voice,
+                speed=1, split_pattern=r'\n+'
             )
-            result = next(generator)
-            wav = result.audio
-            sf.write(output_file, wav, self.sample_rate)
-
-            self._log_execution_time(start_time)
+            for gs, ps, audio in generator:
+                sf.write(output_file, audio.numpy(), 24000)
             return output_file
         except Exception as e:
-            logger.error(f"[KOKOROTTS] Failed to generate TTS: {e}")
-            return ""
+            logger.error(f"KOKOROTTS to_tts error: {e}")
+            return None
 
 
 def create_instance(class_name, *args, **kwargs):

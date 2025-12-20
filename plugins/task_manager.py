@@ -13,35 +13,52 @@ from bailing.utils import read_json_file
 logger = logging.getLogger(__name__)
 
 
-def auto_import_modules(package_name):
+def auto_import_modules(package_name, skip_modules=None):
     """
     自动导入指定包内的所有模块。
 
     Args:
         package_name (str): 包的名称，如 'functions'。
+        skip_modules (list): 需要跳过的模块名称列表。
     """
+    if skip_modules is None:
+        skip_modules = []
+    
     # 获取包的路径
     package = importlib.import_module(package_name)
     package_path = package.__path__
 
     # 遍历包内的所有模块
     for _, module_name, _ in pkgutil.iter_modules(package_path):
+        if module_name in skip_modules:
+            logger.info(f"跳过模块 '{module_name}'")
+            continue
+            
         # 导入模块
         try:
             full_module_name = f"{package_name}.{module_name}"
             importlib.import_module(full_module_name)
             logger.info(f"模块 '{full_module_name}' 已加载")
         except Exception as e:
-            logger.error(f"模块 '{full_module_name}' 加载失败")
+            logger.error(f"模块 '{full_module_name}' 加载失败: {e}", exc_info=True)
 
-# 自动导入 'functions' 包中的所有模块
-auto_import_modules('plugins.functions')
+# Remove top-level auto-import
+# auto_import_modules('plugins.functions')
 
 
 class TaskManager:
     def __init__(self, config, result_queue: queue.Queue):
-        self.functions = read_json_file(config.get("functions_call_name"))
         aigc_manus_enabled = config.get("aigc_manus_enabled", False)
+        
+        # 根据配置决定要跳过的模块
+        skip_list = []
+        if not aigc_manus_enabled:
+            skip_list.append('aigc_manus')
+            
+        # 自动导入 'functions' 包中的模块
+        auto_import_modules('plugins.functions', skip_modules=skip_list)
+        
+        self.functions = read_json_file(config.get("functions_call_name"))
         if not aigc_manus_enabled:
             self.functions = [item for item in self.functions if item["function"]["name"] != 'aigc_manus']
         self.task_queue = queue.Queue()
