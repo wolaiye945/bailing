@@ -122,9 +122,12 @@ class Robot(ABC):
         def vad_thread():
             while not self.stop_event.is_set():
                 try:
-                    data = self.audio_queue.get()
+                    # 使用 timeout 允许检查 stop_event
+                    data = self.audio_queue.get(timeout=1.0)
                     vad_statue = self.vad.is_vad(data)
                     self.vad_queue.put({"voice": data, "vad_statue": vad_statue})
+                except queue.Empty:
+                    continue
                 except Exception as e:
                     logger.error(f"VAD 处理出错: {e}")
         consumer_audio = threading.Thread(target=vad_thread, daemon=True)
@@ -134,7 +137,8 @@ class Robot(ABC):
         def priority_thread():
             while not self.stop_event.is_set():
                 try:
-                    future = self.tts_queue.get()
+                    # 使用 timeout 允许检查 stop_event
+                    future = self.tts_queue.get(timeout=1.0)
                     try:
                         tts_file = future.result(timeout=5)
                     except TimeoutError:
@@ -147,6 +151,8 @@ class Robot(ABC):
                         continue
                     logger.debug(f"_tts_priority: 准备播放 {tts_file}")
                     self.player.play(tts_file)
+                except queue.Empty:
+                    continue
                 except Exception as e:
                     logger.error(f"tts_priority priority_thread: {e}")
         tts_priority = threading.Thread(target=priority_thread, daemon=True)
@@ -159,12 +165,13 @@ class Robot(ABC):
 
     def shutdown(self):
         """关闭所有资源，确保程序安全退出"""
-        logger.info("Shutting down Robot...")
+        logger.info(f"正在关闭 Robot 实例: {id(self)}")
         self.stop_event.set()
-        self.executor.shutdown(wait=True)
+        # 不要 wait=True，避免长时间阻塞
+        self.executor.shutdown(wait=False)
         self.recorder.stop_recording()
         self.player.shutdown()
-        logger.info("Shutdown complete.")
+        logger.info(f"Robot 实例 {id(self)} 已完成关闭流程")
 
     def start_recording_and_vad(self):
         # 开始监听语音流
@@ -177,11 +184,22 @@ class Robot(ABC):
 
     def _duplex(self):
         # 处理识别结果
-        data = self.vad_queue.get()
+        try:
+            # 使用 timeout 允许检查 stop_event
+            data = self.vad_queue.get(timeout=1.0)
+        except queue.Empty:
+            return
+            
         # 识别到vad开始
         if self.vad_start:
             self.speech.append(data)
+        
         vad_status = data.get("vad_statue")
+        
+        # 只有在有 vad_status 时才记录 debug 日志，避免太多无用信息
+        if vad_status:
+            logger.debug(f"VAD 状态更新: {vad_status}")
+
         # 空闲的时候，取出耗时任务进行播放
         if not self.task_queue.empty() and  not self.vad_start and vad_status is None \
                 and not self.player.get_playing_status() and self.chat_lock is False:
@@ -210,36 +228,55 @@ class Robot(ABC):
             else:  # 没有播放，正常
                 self.vad_start = True
                 self.speech.append(data)
-        elif "end" in vad_status and len(self.speech) > 0:
-            try:
-                logger.debug(f"语音包的长度：{len(self.speech)}")
+        elif "end" in vad_status:
+            if len(self.speech) > 0:
+                logger.info(f"检测到说话结束，异步启动 ASR 识别 (语音包长度: {len(self.speech)})")
                 self.vad_start = False
+                self.vad.reset_states()  # 重置 VAD 状态
                 voice_data = [d["voice"] for d in self.speech]
-                text, tmpfile = self.asr.recognizer(voice_data)
                 self.speech = []
-            except Exception as e:
-                self.vad_start = False
-                self.speech = []
-                logger.error(f"ASR识别出错: {e}")
-                return
-            if not text.strip():
-                logger.debug("识别结果为空，跳过处理。")
-                return
+                
+                def asr_and_chat(data):
+                    try:
+                        logger.info("开始 ASR 识别...")
+                        text, tmpfile = self.asr.recognizer(data)
+                        if text is None or not text.strip():
+                            logger.info("ASR 识别结果为空，跳过处理。")
+                            return
+                        
+                        logger.info(f"ASR 识别成功: {text}")
+                        if self.callback:
+                            self.callback({"role": "user", "content": str(text)})
+                        self.chat(text)
+                    except Exception as e:
+                        logger.error(f"ASR/Chat 异步处理出错: {e}", exc_info=True)
+                    finally:
+                        logger.info("ASR/Chat 异步处理线程结束")
 
-            logger.debug(f"ASR识别结果: {text}")
-            if self.callback:
-                self.callback({"role": "user", "content": str(text)})
-            self.executor.submit(self.chat, text)
+                self.executor.submit(asr_and_chat, voice_data)
+            else:
+                logger.debug("检测到说话结束，但语音包为空，忽略")
+                self.vad_start = False
+                self.vad.reset_states()
         return True
 
     def run(self):
+        logger.info("Robot 运行线程已启动")
         try:
             self.start_recording_and_vad()  # 监听语音流
+            logger.info("语音录音和 VAD 已启动")
             while not self.stop_event.is_set():
-                self._duplex()  # 双工处理
+                try:
+                    self._duplex()  # 双工处理
+                except Exception as e:
+                    logger.error(f"Robot _duplex 循环出错: {e}", exc_info=True)
+                    time.sleep(0.1)
         except KeyboardInterrupt:
-            logger.info("Received KeyboardInterrupt. Exiting...")
+            logger.info("收到 KeyboardInterrupt，正在退出...")
+        except Exception as e:
+            logger.error(f"Robot 运行线程崩溃: {e}", exc_info=True)
         finally:
+            logger.info("Robot 运行线程即将结束，执行清理...")
             self.shutdown()
 
     def speak_and_play(self, text):
@@ -277,6 +314,14 @@ class Robot(ABC):
         content_arguments = ""
         
         for chunk in llm_responses:
+            if self.stop_event.is_set():
+                logger.info("检测到 stop_event，停止 chat_tool LLM 响应迭代")
+                break
+            
+            if not self.chat_lock:
+                logger.info("检测到 chat_lock 被外部重置，停止 chat_tool LLM 响应迭代（打断）")
+                break
+
             content, tools_call = chunk
             
             # 尽早检测工具调用
@@ -405,64 +450,75 @@ class Robot(ABC):
         return response_message
 
     def chat(self, query):
-        self.dialogue.put(Message(role="user", content=query))
+        if query:
+            logger.info(f"开始处理对话: {query}")
+            self.dialogue.put(Message(role="user", content=query))
+        else:
+            logger.info("继续之前的对话处理")
+            
         response_message = []
-        # futures = []
         start = 0
         self.chat_lock = True
-        if self.start_task_mode:
-            response_message = self.chat_tool(query)
-        else:
-            # 提交 LLM 任务
-            try:
-                start_time = time.time()  # 记录开始时间
-                llm_responses = self.llm.response(self.dialogue.get_llm_dialogue())
-            except Exception as e:
-                self.chat_lock = False
-                logger.error(f"LLM 处理出错 {query}: {e}")
-                return None
-            # 提交 TTS 任务到线程池
-            for content in llm_responses:
-                response_message.append(content)
-                response_message_concat = "".join(response_message)
+        try:
+            if self.start_task_mode:
+                logger.debug("进入任务模式 (chat_tool)")
+                # 获取当前对话历史，让 chat_tool 自己处理
+                response_message_tool = self.chat_tool(query)
+                if isinstance(response_message_tool, list):
+                    response_message.extend(response_message_tool)
+                else:
+                    # 如果 chat_tool 递归调用了 chat，它会返回 True/None
+                    return response_message_tool
+            else:
+                # 提交 LLM 任务
+                logger.debug("进入普通对话模式 (llm.response)")
+                try:
+                    start_time = time.time()  # 记录开始时间
+                    llm_responses = self.llm.response(self.dialogue.get_llm_dialogue())
+                except Exception as e:
+                    self.chat_lock = False
+                    logger.error(f"LLM 处理出错 {query}: {e}", exc_info=True)
+                    return None
                 
-                # 过滤掉思考部分再进行分句
-                clean_response_concat = remove_think_tags(response_message_concat)
-                
-                end_time = time.time()  # 记录结束时间
-                logger.debug(f"大模型返回时间时间tool: {end_time - start_time} 秒, 生成token={content}")
-                
-                flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
-                logger.debug(
-                    f"大模型返回时间时间tool: flag_segment={flag_segment} 秒, index_segment={index_segment}")
-                if flag_segment:
-                    segment_text = clean_response_concat[start:index_segment + 1]
-                    # 为了保证语音的连贯，至少2个字才转tts
+                # 提交 TTS 任务到线程池
+                    logger.debug("开始迭代 LLM 响应")
+                    for content in llm_responses:
+                        if self.stop_event.is_set():
+                            logger.info("检测到 stop_event，停止 LLM 响应迭代")
+                            break
+                        
+                        if not self.chat_lock:
+                            logger.info("检测到 chat_lock 被外部重置，停止 LLM 响应迭代（打断）")
+                            break
+                        
+                        response_message.append(content)
+                        response_message_concat = "".join(response_message)
+                        
+                        # 过滤掉思考部分再进行分句
+                        clean_response_concat = remove_think_tags(response_message_concat)
+                        
+                        flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
+                        if flag_segment:
+                            segment_text = clean_response_concat[start:index_segment + 1]
+                            if len(segment_text) <= max(2, start):
+                                continue
+                            
+                            logger.info(f"生成语音分句: {segment_text}")
+                            future = self.executor.submit(self.speak_and_play, segment_text)
+                            self.tts_queue.put(future)
+                            start = index_segment + 1
 
-                    if len(segment_text) <= max(2, start):
-                        continue
+                # 处理剩余的响应
+                clean_response_concat = remove_think_tags("".join(response_message))
+                if start < len(clean_response_concat):
+                    segment_text = clean_response_concat[start:]
+                    logger.info(f"生成语音最后分句: {segment_text}")
                     future = self.executor.submit(self.speak_and_play, segment_text)
                     self.tts_queue.put(future)
-                    # futures.append(future)
-                    start = index_segment + 1  # len(response_message)
+        finally:
+            self.chat_lock = False
+            logger.info(f"对话处理完成: {query}")
 
-            # 处理剩余的响应
-            clean_response_concat = remove_think_tags("".join(response_message))
-            if start < len(clean_response_concat):
-                segment_text = clean_response_concat[start:]
-                future = self.executor.submit(self.speak_and_play, segment_text)
-                self.tts_queue.put(future)
-            # 等待所有 TTS 任务完成
-            """
-            for future in futures:
-                try:
-                    playing = future.result(timeout=5)
-                except TimeoutError:
-                    logger.error("TTS 任务超时")
-                except Exception as e:
-                    logger.error(f"TTS 任务出错: {e}")
-            """
-        self.chat_lock = False
         # 更新对话
         full_response = "".join(response_message)
         formatted_response = format_think_sections(full_response)

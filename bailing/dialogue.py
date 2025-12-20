@@ -47,7 +47,14 @@ class Dialogue:
             if d["role"] not in ("user", "assistant"):
                 continue
             dialogue.append(d)
-        file_name = os.path.join(self.dialogue_history_path, f"dialogue-{self.current_time}.json")
+        
+        # 使用日期子目录
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_dir = os.path.join(self.dialogue_history_path, date_str)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+            
+        file_name = os.path.join(date_dir, f"dialogue-{self.current_time}.json")
         write_json_file(file_name, dialogue)
 
 if __name__ == "__main__":

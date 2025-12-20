@@ -140,43 +140,73 @@ async def delete_date_files(date_str: str):
 async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...)):
     await websocket.accept()
     loop = asyncio.get_event_loop()
-    logger.info("WebSocket连接已建立")
-    if user_id not in active_robots:
-        active_robots[user_id] = [robot.Robot(config_path, websocket, loop), time.time()]
-        threading.Thread(target=active_robots[user_id][0].run, daemon=True).start()
-        #active_robots[user_id][0].run()
-    robot_instance = active_robots[user_id][0]
+    logger.info(f"WebSocket连接已建立: user_id={user_id}")
+    
+    # 如果已存在该用户的 robot，先关闭旧的
+    if user_id in active_robots:
+        try:
+            old_robot, _ = active_robots[user_id]
+            old_robot.shutdown()
+            logger.info(f"清理旧的 robot 实例: user_id={user_id}")
+        except Exception as e:
+            logger.error(f"清理旧 robot 实例出错: {e}")
+        active_robots.pop(user_id, None)
+
+    # 创建新的 robot 实例
+    robot_instance = robot.Robot(config_path, websocket, loop)
+    active_robots[user_id] = [robot_instance, time.time()]
+    logger.info(f"创建新 Robot 实例: user_id={user_id}, robot_id={id(robot_instance)}")
+    
+    # 启动 robot 运行线程
+    robot_thread = threading.Thread(target=robot_instance.run, daemon=True)
+    robot_thread.start()
 
     try:
-        # 模拟处理流程
         while True:
+            # 检查当前 robot 是否仍是该用户的活跃实例
+            if active_robots.get(user_id) and active_robots[user_id][0] is not robot_instance:
+                logger.info(f"检测到新的 Robot 实例已接管，退出旧连接循环: user_id={user_id}, old_robot_id={id(robot_instance)}")
+                break
+
+            # 使用 receive() 并显式处理断开连接
             msg = await websocket.receive()
+            
+            if msg["type"] == "websocket.disconnect":
+                logger.info(f"收到断开连接信号: user_id={user_id}")
+                break
 
             if "bytes" in msg:
                 robot_instance.recorder.put_audio(msg["bytes"])
             elif "text" in msg:
-                logger.info(f"收到请求{msg}")
-                msg_js = json.loads(msg["text"])
-                if msg_js["type"] == "playback_status":
-                    # 播放中
-                    if msg_js["status"]== "playing" or msg_js["queue_size"]>0:
-                        logger.info(f"[Client] status: {msg}")
-                        robot_instance.player.set_playing_status(True)
-                    else: # 未播放
-                        robot_instance.player.set_playing_status(False)
-                else:
-                    logger.warning(f"未知指令：{msg}")
+                logger.info(f"收到请求: {msg['text']}")
+                try:
+                    msg_js = json.loads(msg["text"])
+                    if msg_js.get("type") == "playback_status":
+                        if msg_js.get("status") == "playing" or msg_js.get("queue_size", 0) > 0:
+                            robot_instance.player.set_playing_status(True)
+                        else:
+                            robot_instance.player.set_playing_status(False)
+                    else:
+                        logger.warning(f"未知指令类型: {msg_js.get('type')}")
+                except json.JSONDecodeError:
+                    logger.error(f"无法解析 JSON 文本消息: {msg['text']}")
+            
+            # 更新活跃时间
             active_robots[user_id][1] = time.time()
 
     except WebSocketDisconnect:
-        logger.info("客户端断开连接")
+        logger.info(f"WebSocket 断开连接: user_id={user_id}")
     except Exception as e:
-        logger.error(f"WebSocket错误: {e}")
+        logger.error(f"WebSocket 错误 (user_id={user_id}): {e}")
     finally:
-        # 清理资源
-        #robot_instance.recorder.stop_recording()
-        #robot_instance.shutdown()
-        logger.info("WebSocket连接已关闭")
+        # 彻底清理资源
+        try:
+            if robot_instance:
+                robot_instance.shutdown()
+            active_robots.pop(user_id, None)
+            logger.info(f"资源已清理，WebSocket 连接关闭: user_id={user_id}")
+        except Exception as e:
+            logger.error(f"清理资源时出错: {e}")
 
 # 托管前端静态文件
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

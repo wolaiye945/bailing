@@ -15,6 +15,8 @@ import torchaudio
 import soundfile as sf
 from kokoro import KModel, KPipeline
 
+from huggingface_hub import hf_hub_download
+
 logger = logging.getLogger(__name__)
 
 
@@ -272,33 +274,26 @@ class KOKOROTTS(AbstractTTS):
             if KOKOROTTS._model_instance is None:
                 if self.lang == "z":
                     logger.info(f"Loading KOKOROTTS model from {self.repo_id}...")
-                    KOKOROTTS._model_instance = KModel(repo_id=self.repo_id).to(self.device).eval()
+                    # Update KModel.REPO_ID to the Chinese repo
+                    KModel.REPO_ID = self.repo_id
+                    try:
+                        # Try to download the v1.1-zh model file
+                        model_path = hf_hub_download(repo_id=self.repo_id, filename="kokoro-v1_1-zh.pth")
+                        KOKOROTTS._model_instance = KModel(model=model_path).to(self.device).eval()
+                    except Exception as e:
+                        logger.warning(f"Failed to load kokoro-v1_1-zh.pth: {e}. Falling back to default.")
+                        KOKOROTTS._model_instance = KModel().to(self.device).eval()
         self.model = KOKOROTTS._model_instance
 
         # set up pipelines
         self._setup_pipelines()
 
     def _setup_pipelines(self):
-        # English/IPA fallback pipeline
-        self.en_pipeline = KPipeline(
-            lang_code="a", repo_id=self.repo_id, model=False
-        )
-
-        def en_callable(text):
-            if text == "Kokoro":
-                return "kˈOkəɹO"
-            elif text == "Sol":
-                return "sˈOl"
-            return next(self.en_pipeline(text)).phonemes
-
-        self.en_callable = en_callable
-
         # Main TTS pipeline
         self.pipeline = KPipeline(
             lang_code=self.lang,
-            repo_id=self.repo_id,
             model=self.model,
-            en_callable=self.en_callable
+            device=self.device
         )
 
     def _generate_filename(self, extension=".wav"):
@@ -339,9 +334,16 @@ class KOKOROTTS(AbstractTTS):
                 text, voice=self.voice,
                 speed=1, split_pattern=r'\n+'
             )
+            all_audio = []
             for gs, ps, audio in generator:
-                sf.write(output_file, audio.numpy(), 24000)
-            return output_file
+                all_audio.append(audio.numpy())
+            
+            if all_audio:
+                import numpy as np
+                combined_audio = np.concatenate(all_audio)
+                sf.write(output_file, combined_audio, 24000)
+                return output_file
+            return None
         except Exception as e:
             logger.error(f"KOKOROTTS to_tts error: {e}")
             return None

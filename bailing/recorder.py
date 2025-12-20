@@ -81,7 +81,7 @@ class WebSocketRecorder(AbstractRecorder):
     """通过WebSocket接收前端音频，并进行后端分帧处理"""
 
     def __init__(self, config):
-        self.running = True
+        self.running = False  # 初始状态为 False，等待 start_recording 调用
         self.audio_queue: queue.Queue = None
         self._buffer = bytearray()
         self._frame_size_bytes = 512 * 2  # 512 samples × 2 bytes/sample for 16kHz Int16 PCM
@@ -89,12 +89,20 @@ class WebSocketRecorder(AbstractRecorder):
     def start_recording(self, audio_queue: queue.Queue):
         self.audio_queue = audio_queue
         self.running = True
+        logger.info("WebSocketRecorder 已启动，开始接收音频数据")
 
     def put_audio(self, data: bytes):
         """接收原始 PCM 数据，将其缓冲并分帧后存入 audio_queue"""
         if not self.running:
+            # 只有在 audio_queue 为空且确实没启动时才打印丢弃日志，避免刷屏
+            if self.audio_queue is None:
+                return
             logger.info(f"录音已暂停，丢弃数据")
             return
+        
+        if self.audio_queue is None:
+            return
+
         # 累积数据
         self._buffer.extend(data)
 

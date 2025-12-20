@@ -52,14 +52,17 @@ class Memory:
     @staticmethod
     def extract_time_from_filename(filename):
         """从文件名中提取时间信息"""
-        match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', filename)
+        # 匹配 dialogue-YYYY-MM-DD_HH-MM-SS.json
+        match = re.search(r'dialogue-(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})', filename)
         if match:
             return match.group(1)
-        return None
+        return filename
 
     @staticmethod
     def read_dialogue_file(file_path):
         """读取 JSON 对话文件并返回对话列表"""
+        if not os.path.exists(file_path):
+            return []
         with open(file_path, 'r', encoding='utf-8') as file:
             try:
                 dialogues = json.load(file)
@@ -81,12 +84,11 @@ class Memory:
 
     def read_dialogues_in_order(self, directory):
         """读取指定目录下的所有对话文件，按时间顺序排列"""
-        # 获取所有符合命名规则的文件路径
-        pattern = os.path.join(directory, 'dialogue-*-*-*.json')
-        files = glob.glob(pattern)
+        # 获取所有符合命名规则的文件路径，支持递归查找子目录
+        pattern = os.path.join(directory, '**', 'dialogue-*.json')
+        files = glob.glob(pattern, recursive=True)
 
         # 按时间排序
-        #files.sort(key=lambda x: x.split('-')[1:4])  # 根据时间部分进行排序
         files.sort(key=lambda x: self.extract_time_from_filename(os.path.basename(x)))
 
         # 读取并打印所有对话

@@ -753,34 +753,48 @@
         }
 
         // 临时文件管理逻辑
+        let cachedTempFilesData = null;
+
         async function fetchTempFiles() {
-            tempFilesContent.innerHTML = `
-                <div style="text-align: center; padding: 50px;">
-                    <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: var(--primary);"></i>
-                    <p>加载中...</p>
-                </div>
-            `;
+            const container = document.getElementById('tempFilesContent');
+            if (container.innerHTML.trim() === '' || container.querySelector('.fa-spinner')) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 50px;">
+                        <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: var(--primary);"></i>
+                        <p>加载中...</p>
+                    </div>
+                `;
+            }
             try {
                 const response = await fetch('/temp_files');
-                const data = await response.json();
-                renderTempFiles(data);
+                cachedTempFilesData = await response.json();
+                renderTempFiles(cachedTempFilesData);
             } catch (error) {
-                tempFilesContent.innerHTML = `<p style="color: var(--accent);">加载失败: ${error.message}</p>`;
+                container.innerHTML = `<p style="color: var(--accent);">加载失败: ${error.message}</p>`;
             }
         }
 
         function renderTempFiles(data) {
-            if (Object.keys(data).length === 0) {
+            if (!data || Object.keys(data).length === 0) {
                 tempFilesContent.innerHTML = '<p style="text-align: center; padding: 50px; color: var(--text-muted);">暂无临时文件</p>';
                 return;
             }
 
             let html = '';
             for (const [date, files] of Object.entries(data)) {
+                const dateId = `date-${date}`;
+                
+                // 检查该日期下是否所有文件都已选中
+                const dateFiles = files.map(f => `${date}/${f.name}`);
+                const allSelected = dateFiles.length > 0 && dateFiles.every(f => selectedFiles.has(f));
+
                 html += `
                     <div style="margin-bottom: 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(74, 108, 247, 0.1); border-radius: 10px; margin-bottom: 10px;">
-                            <h3 style="margin: 0; font-size: 1.1rem; color: var(--primary);">${date}</h3>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" id="check-${dateId}" onchange="toggleDateSelection('${date}', this.checked)" style="cursor: pointer;" ${allSelected ? 'checked' : ''}>
+                                <h3 style="margin: 0; font-size: 1.1rem; color: var(--primary); cursor: pointer;" onclick="document.getElementById('check-${dateId}').click()">${date}</h3>
+                            </div>
                             <button onclick="deleteDateFiles('${date}')" style="background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.9rem;">
                                 <i class="fas fa-trash"></i> 删除该日全部
                             </button>
@@ -810,14 +824,28 @@
             updateBatchDeleteBtn();
         }
 
+        function toggleDateSelection(date, isChecked) {
+            if (!cachedTempFilesData || !cachedTempFilesData[date]) return;
+            const files = cachedTempFilesData[date];
+            files.forEach(file => {
+                const relPath = `${date}/${file.name}`;
+                if (isChecked) {
+                    selectedFiles.add(relPath);
+                } else {
+                    selectedFiles.delete(relPath);
+                }
+            });
+            renderTempFiles(cachedTempFilesData);
+        }
+
         function toggleFileSelection(relPath) {
             if (selectedFiles.has(relPath)) {
                 selectedFiles.delete(relPath);
             } else {
                 selectedFiles.add(relPath);
             }
-            // 重新渲染当前数据（这里为了简单直接重刷，实际可以用更高效的方法）
-            refreshTempFilesBtn.click();
+            // 重新渲染当前数据
+            renderTempFiles(cachedTempFilesData);
         }
 
         function updateBatchDeleteBtn() {
@@ -838,6 +866,7 @@
                             selectedFiles.delete(path);
                         }
                     }
+                    // 重新获取数据
                     fetchTempFiles();
                 } else {
                     alert('删除失败: ' + result.message);
@@ -965,6 +994,11 @@
 
             async playAudio(audioData) {
                 try {
+                    // 确保 AudioContext 已恢复（浏览器策略）
+                    if (this.audioContext.state === 'suspended') {
+                        await this.audioContext.resume();
+                    }
+                    
                     const audioBuffer = await this.audioContext.decodeAudioData(audioData);
                     this.audioQueue.push(audioBuffer);
                     this.addLog(`收到音频, 队列大小: ${this.audioQueue.length}`);
@@ -973,6 +1007,12 @@
                     }
                 } catch (error) {
                     this.addLog(`播放错误: ${error}`);
+                    console.error("Audio decode error:", error);
+                    // 如果是 ArrayBuffer，尝试打印前几个字节
+                    if (audioData instanceof ArrayBuffer) {
+                        const view = new Uint8Array(audioData.slice(0, 10));
+                        console.log("Audio data prefix:", view);
+                    }
                 }
             }
 

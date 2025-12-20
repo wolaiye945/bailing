@@ -55,7 +55,17 @@ class FunASR(ASR):
 
     def recognizer(self, stream_in_audio):
         try:
-            tmpfile = os.path.join(self.output_dir, f"asr-{datetime.now().date()}@{uuid.uuid4().hex}.wav")
+            # 确保输出目录存在
+            if not os.path.exists(self.output_dir):
+                os.makedirs(self.output_dir)
+            
+            # 使用日期子目录
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            date_dir = os.path.join(self.output_dir, date_str)
+            if not os.path.exists(date_dir):
+                os.makedirs(date_dir)
+
+            tmpfile = os.path.join(date_dir, f"asr-{uuid.uuid4().hex}.wav")
             self._save_audio_to_file(stream_in_audio, tmpfile)
 
             res = self.model.generate(
