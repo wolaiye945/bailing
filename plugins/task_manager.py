@@ -114,6 +114,22 @@ class TaskManager:
         if func_name not in function_registry:
             return ActionResponse(action=Action.NOTFOUND, result="没有找到相应函数", response=None)
         
+        # 确保 func_args 是 dict 类型
+        if isinstance(func_args, str):
+            try:
+                import json
+                func_args = json.loads(func_args)
+            except Exception as e:
+                logger.error(f"解析 func_args 失败: {e}, func_args={func_args}")
+                func_args = {}
+        
+        if func_args is None:
+            func_args = {}
+            
+        if not isinstance(func_args, dict):
+            logger.warning(f"func_args 不是字典类型，强制转换为为空字典: {type(func_args)}")
+            func_args = {}
+
         func = function_registry[func_name]
         result = self.call_function(func_name, **func_args)
         
