@@ -6,6 +6,10 @@ import logging
 import threading
 from datetime import datetime
 
+# Fix HF_ENDPOINT if it's set without protocol
+if os.environ.get("HF_ENDPOINT") and not os.environ.get("HF_ENDPOINT").startswith("http"):
+    os.environ["HF_ENDPOINT"] = "https://" + os.environ["HF_ENDPOINT"]
+
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>百聆(BaiLing) - 智能语音对话</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
             --primary: #4a6cf7;
@@ -227,25 +228,27 @@
         #dialogue-container {
             max-width: 1200px;
             margin: 20px auto;
-            padding: 25px;
-            height: calc(100vh - 420px);
-            min-height: 300px;
+            padding: 30px;
+            height: calc(100vh - 400px);
+            min-height: 400px;
             position: relative;
             z-index: 5;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 20px;
-            background: rgba(10, 15, 30, 0.6);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(74, 108, 247, 0.2);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            gap: 25px;
+            background: rgba(10, 15, 30, 0.4);
+            backdrop-filter: blur(15px);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary) transparent;
         }
 
         /* 自定义滚动条 */
         #dialogue-container::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
 
         #dialogue-container::-webkit-scrollbar-track {
@@ -253,110 +256,108 @@
         }
 
         #dialogue-container::-webkit-scrollbar-thumb {
+            background: rgba(74, 108, 247, 0.5);
+            border-radius: 10px;
+        }
+
+        #dialogue-container::-webkit-scrollbar-thumb:hover {
             background: var(--primary);
-            border-radius: 4px;
         }
 
         /* 消息样式 */
         .message {
-            padding: 20px 25px;
+            padding: 16px 24px;
             border-radius: 20px;
-            max-width: 85%;
+            max-width: 80%;
             position: relative;
             opacity: 0;
-            transform: translateY(30px);
-            animation: fadeUp 0.5s forwards;
-            transition: var(--transition);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--glass-border);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            transform: translateY(20px);
+            animation: fadeUp 0.4s ease-out forwards;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
 
         .message:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            border-color: rgba(255, 255, 255, 0.1);
         }
 
         .message.role-user {
-            background: linear-gradient(45deg, rgba(74, 108, 247, 0.25), rgba(59, 89, 214, 0.15));
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
             align-self: flex-end;
-            border-top-right-radius: 5px;
-            animation-delay: 0.1s;
+            border-bottom-right-radius: 4px;
+            color: white;
         }
 
-        .message.role-bot {
-            background: linear-gradient(45deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.5));
+        .message.role-assistant, .message.role-bot {
+            background: rgba(30, 41, 59, 0.6);
             align-self: flex-start;
-            border-top-left-radius: 5px;
-            animation-delay: 0.2s;
-        }
-
-        .message.role-admin {
-            background: linear-gradient(45deg, rgba(31, 221, 161, 0.25), rgba(15, 23, 42, 0.2));
-            align-self: flex-start;
-            animation-delay: 0.3s;
+            border-bottom-left-radius: 4px;
+            color: var(--text-light);
         }
 
         .message.role-system {
-            background: linear-gradient(45deg, rgba(254, 202, 87, 0.25), rgba(15, 23, 42, 0.2));
+            background: rgba(148, 163, 184, 0.1);
             align-self: center;
             text-align: center;
-            max-width: 70%;
-            animation-delay: 0.4s;
+            max-width: 90%;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            border: none;
+            box-shadow: none;
         }
 
         .message-content {
-            font-size: 1.1rem;
+            font-size: 1.05rem;
             line-height: 1.6;
-            position: relative;
-            z-index: 2;
+            word-wrap: break-word;
+        }
+
+        /* Markdown 样式优化 */
+        .message-content p { margin-bottom: 0.8em; }
+        .message-content p:last-child { margin-bottom: 0; }
+        .message-content code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+        .message-content pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 12px;
+            overflow-x: auto;
+            margin: 10px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .message-content ul, .message-content ol {
+            margin-left: 20px;
+            margin-bottom: 10px;
         }
 
         .role-tag {
-            position: absolute;
-            top: -12px;
-            font-size: 0.8rem;
-            font-weight: 700;
-            padding: 5px 15px;
-            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            margin-bottom: 6px;
             text-transform: uppercase;
             letter-spacing: 1px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            opacity: 0.7;
         }
 
-        .role-user .role-tag {
-            background: var(--primary);
-            right: 20px;
-            box-shadow: 0 0 10px rgba(74, 108, 247, 0.5);
-        }
-
-        .role-bot .role-tag {
-            background: var(--accent);
-            left: 20px;
-            box-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
-        }
-
-        .role-admin .role-tag {
-            background: var(--success);
-            left: 20px;
-            box-shadow: 0 0 10px rgba(31, 221, 161, 0.5);
-        }
-
-        .role-system .role-tag {
-            background: var(--warning);
-            left: 50%;
-            transform: translateX(-50%);
-            color: #333;
-            box-shadow: 0 0 10px rgba(254, 202, 87, 0.5);
-        }
+        .role-user .role-tag { text-align: right; color: rgba(255, 255, 255, 0.9); }
+        .role-assistant .role-tag, .role-bot .role-tag { color: var(--primary); }
 
         .timestamp {
-            display: block;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: var(--text-muted);
             margin-top: 8px;
-            text-align: right;
+            opacity: 0.5;
         }
+
+        .role-user .timestamp { text-align: right; }
 
         .loading {
             text-align: center;
@@ -727,6 +728,10 @@
         let recorder = null;
         let connectionStatus = 'disconnected';
         let logsVisible = false;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        const reconnectDelay = 3000;
+        let isManuallyStopped = false;
 
         // 更新状态显示
         function updateStatus(status, message) {
@@ -741,7 +746,7 @@
             entry.className = `log-entry ${type}`;
             entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
             logContent.appendChild(entry);
-            logContent.scrollTop = logContainer.scrollHeight;
+            logContent.scrollTop = logContent.scrollHeight;
         }
 
 
@@ -750,6 +755,90 @@
             logsVisible = !logsVisible;
             logContainer.classList.toggle('visible', logsVisible);
             logToggle.innerHTML = logsVisible ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+        }
+
+        async function connect() {
+            if (isManuallyStopped) return;
+            
+            updateStatus("connecting", `连接中 (${reconnectAttempts + 1}/${maxReconnectAttempts})...`);
+            addLog(`尝试连接到服务器 (第 ${reconnectAttempts + 1} 次)...`);
+
+            try {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                websocket = new WebSocket(`${protocol}//${window.location.host}/ws?user_id=${userId}`);
+
+                websocket.binaryType = 'arraybuffer';
+
+                websocket.onopen = async () => {
+                    reconnectAttempts = 0;
+                    updateStatus("connected", "已连接，准备录音...");
+                    addLog("WebSocket连接已建立");
+
+                    player = new AudioPlayer(updateStatus, websocket);
+                    recorder = new WebRecorder(websocket);
+
+                    const started = await recorder.start();
+                    if (started) {
+                        updateStatus("recording", "录音中...");
+                        startBtn.disabled = true;
+                        stopBtn.disabled = false;
+                        interruptBtn.disabled = false;
+                    }
+                };
+
+                websocket.onmessage = async (event) => {
+                    if (typeof event.data === 'string') {
+                        try {
+                            const message = JSON.parse(event.data);
+                            if (message.type === 'interrupt') {
+                                player.interrupt();
+                                updateStatus("disconnected", "收到打断指令");
+                                addLog("收到服务器打断指令");
+                            } else if (message.type == 'update_dialogue') {
+                                // addLog("收到对话更新");
+                                updateDialogue(message.data);
+                            } else {
+                                addLog("收到未知指令数据：" + event.data);
+                            }
+                        } catch (e) {
+                            addLog("解析消息失败: " + e);
+                        }
+                    } else {
+                        const audioData = event.data; // ArrayBuffer
+                        player.playAudio(audioData);
+                    }
+                };
+
+                websocket.onerror = (error) => {
+                    addLog(`WebSocket错误: ${error}`);
+                    updateStatus("disconnected", "连接错误");
+                };
+
+                websocket.onclose = (event) => {
+                    addLog(`连接已关闭 (代码: ${event.code})`);
+                    if (recorder) recorder.stop();
+                    
+                    if (!isManuallyStopped && reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        const delay = reconnectDelay * Math.pow(1.5, reconnectAttempts - 1);
+                        updateStatus("disconnected", `连接断开，${(delay/1000).toFixed(1)}秒后重连...`);
+                        setTimeout(connect, delay);
+                    } else {
+                        updateStatus("disconnected", "已断开连接");
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                        interruptBtn.disabled = true;
+                    }
+                };
+
+            } catch (error) {
+                addLog(`连接异常: ${error}`);
+                updateStatus("disconnected", "连接异常");
+                if (!isManuallyStopped && reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    setTimeout(connect, reconnectDelay);
+                }
+            }
         }
 
         // 临时文件管理逻辑
@@ -919,16 +1008,15 @@
         // 更新对话
         function updateDialogue(dialogue) {
             const container = document.getElementById('dialogue-container');
-            const existingMessages = container.querySelectorAll('.message');
-            const existingCount = 0; //existingMessages.length;
+            
+            // 清空容器重新渲染 (支持 Markdown 后更可靠)
+            container.innerHTML = '';
 
-            // 只添加新消息
-            for (let i = existingCount; i < dialogue.length; i++) {
-                const message = dialogue[i];
+            dialogue.forEach(message => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message role-${message.role}`;
 
-                // 获取当前时间
+                // 获取当前时间 (实际应用中建议从消息对象获取时间戳)
                 const now = new Date();
                 const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
@@ -936,29 +1024,29 @@
                 const roleText = {
                     'user': '用户',
                     'assistant': '百聆',
+                    'bot': '百聆',
                     'admin': '管理员',
                     'system': '系统'
                 }[message.role] || message.role;
 
+                // 使用 marked 解析 Markdown
+                const renderedContent = typeof marked !== 'undefined' ? marked.parse(message.content) : message.content;
+
                 messageDiv.innerHTML = `
                     <div class="role-tag">${roleText}</div>
                     <div class="message-content">
-                        ${message.content}
+                        ${renderedContent}
                     </div>
                     <div class="timestamp">${timestamp}</div>
-                    <div class="message-actions">
-                        <div class="action-btn"><i class="fas fa-reply"></i></div>
-                        <div class="action-btn"><i class="fas fa-share-alt"></i></div>
-                    </div>
                 `;
 
                 container.appendChild(messageDiv);
+            });
 
-                // 滚动到底部
-                setTimeout(() => {
-                    container.scrollTop = container.scrollHeight;
-                }, 100);
-            }
+            // 滚动到底部
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 100);
         }
 
         class AudioPlayer {
@@ -1206,80 +1294,20 @@
 
 
         startBtn.addEventListener('click', async () => {
-            updateStatus("连接中...");
-            addLog("尝试连接到服务器...");
-
-            try {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                websocket = new WebSocket(`${protocol}//${window.location.host}/ws?user_id=${userId}`);
-
-                websocket.binaryType = 'arraybuffer';
-
-                websocket.onopen = async () => {
-                    updateStatus("已连接，准备录音...", "connected");
-                    addLog("WebSocket连接已建立");
-
-                    player = new AudioPlayer(updateStatus, websocket);
-                    recorder = new WebRecorder(websocket);
-
-                    const started = await recorder.start();
-                    if (started) {
-                        updateStatus("录音中...", "recording");
-                        startBtn.disabled = true;
-                        stopBtn.disabled = false;
-                        interruptBtn.disabled = false;
-                    }
-                };
-
-                websocket.onmessage = async (event) => {
-                    // addLog("收到对话数据"+event.data);
-                    if (typeof event.data === 'string') {
-                        // addLog("收到对话数据"+event.data);
-                        const message = JSON.parse(event.data);
-                        if (message.type === 'interrupt') {
-                            player.interrupt();
-                            updateStatus("收到打断指令", "disconnected");
-                            addLog("收到服务器打断指令"+event.data);
-                        } else if (message.type == 'update_dialogue') {
-                            addLog("收到对话数据"+event.data);
-                            updateDialogue(message.data)
-                        } else {
-                            addLog("收到未知指令数据："+event.data);
-                        }
-                    } else {
-                        const audioData = event.data; // ArrayBuffer
-                        player.playAudio(audioData);
-                    }
-                };
-
-                websocket.onerror = (error) => {
-                    addLog(`WebSocket错误: ${error}`);
-                    updateStatus("连接错误", "disconnected");
-                };
-
-                websocket.onclose = () => {
-                    addLog("连接已关闭");
-                    updateStatus("连接已关闭", "disconnected");
-                    if (recorder) recorder.stop();
-                    startBtn.disabled = false;
-                    stopBtn.disabled = true;
-                    interruptBtn.disabled = true;
-                };
-
-            } catch (error) {
-                addLog(`连接失败: ${error}`);
-                updateStatus("连接失败", "disconnected");
-            }
+            isManuallyStopped = false;
+            reconnectAttempts = 0;
+            connect();
         });
 
         stopBtn.addEventListener('click', () => {
+            isManuallyStopped = true;
             if (websocket) websocket.close();
             if (recorder) recorder.stop();
-            updateStatus("已停止", "disconnected");
+            updateStatus("disconnected", "已手动停止");
             startBtn.disabled = false;
             stopBtn.disabled = true;
             interruptBtn.disabled = true;
-            addLog("对话已停止");
+            addLog("对话已手动停止");
         });
 
         interruptBtn.addEventListener('click', () => {
