@@ -291,10 +291,11 @@ class Robot(ABC):
             
             if content is not None and len(content) > 0:
                 # 检查是否包含代码块标记，这通常意味着工具调用（对于某些模型）
-                if "```" in content or (len(response_message) == 0 and content.strip().startswith("{")):
+                # 如果已经有了原生的 tools_call，就不再尝试从 content 中解析 JSON
+                if tools_call is None and ("```" in content or (len(response_message) == 0 and content.strip().startswith("{"))):
                     tool_call_flag = True
                 
-                if tool_call_flag:
+                if tool_call_flag and tools_call is None:
                     content_arguments += content
                 else:
                     response_message.append(content)
@@ -373,7 +374,8 @@ class Robot(ABC):
                 # 添加工具调用和结果到对话历史，但不添加到 response_message（避免重复显示思考过程）
                 # 注意：这里我们选择不清空 response_message，因为之前的思考过程可能对用户有意义
                 self.dialogue.put(Message(role='assistant',
-                                          tool_calls=[{"id": function_id, "function": {"arguments": json.dumps(function_arguments ,ensure_ascii=False),
+                                          content="".join(response_message),
+                                          tool_calls=[{"id": function_id, "function": {"arguments": json.dumps(function_arguments ,ensure_ascii=False) if isinstance(function_arguments, dict) else function_arguments,
                                                                                        "name": function_name},
                                                        "type": 'function', "index": 0}]))
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.result))
@@ -386,8 +388,9 @@ class Robot(ABC):
                 return response_message
             elif result.action == Action.ADDSYSTEMSPEAK:
                 self.dialogue.put(Message(role='assistant',
+                                          content="".join(response_message),
                                           tool_calls=[{"id": function_id, "function": {
-                                              "arguments": json.dumps(function_arguments, ensure_ascii=False),
+                                              "arguments": json.dumps(function_arguments, ensure_ascii=False) if isinstance(function_arguments, dict) else function_arguments,
                                               "name": function_name},
                                                        "type": 'function', "index": 0}]))
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.response))
