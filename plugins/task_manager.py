@@ -113,27 +113,32 @@ class TaskManager:
     def tool_call(self, func_name, func_args) -> ActionResponse:
         if func_name not in function_registry:
             return ActionResponse(action=Action.NOTFOUND, result="没有找到相应函数", response=None)
+        
         func = function_registry[func_name]
-        if func.action == ToolType.NONE: #  = (1, "调用完工具后，啥也不用管")
+        result = self.call_function(func_name, **func_args)
+        
+        # 如果结果本身就是 ActionResponse，直接返回
+        # 使用类名判断，防止因为不同导入路径导致的 isinstance 失败
+        if result.__class__.__name__ == 'ActionResponse':
+            return result
+            
+        # 否则根据 ToolType 包装结果
+        if func.action == ToolType.NONE:
             future = self.task_executor.submit(self.call_function, func_name, **func_args)
             self.task_queue.put(future)
             return ActionResponse(action=Action.NONE, result=None, response=None)
-        elif func.action == ToolType.WAIT: # = (2, "调用工具，等待函数返回")
-            result = self.call_function( func_name, **func_args)
-            return ActionResponse(action=Action.RESPONSE, result=result, response=None)
-        elif func.action == ToolType.SCHEDULER: # = (3, "定时任务，时间到了之后，直接回复")
-            result = self.call_function(func_name, **func_args)
-            return ActionResponse(action=Action.RESPONSE, result=result, response=None)
-        elif func.action == ToolType.TIME_CONSUMING: #  = (4, "耗时任务，需要一定时间，后台运行有结果后再回复")
+        elif func.action == ToolType.WAIT:
+            return ActionResponse(action=Action.RESPONSE, result=result, response=result)
+        elif func.action == ToolType.SCHEDULER:
+            return ActionResponse(action=Action.RESPONSE, result=result, response=result)
+        elif func.action == ToolType.TIME_CONSUMING:
             future = self.task_executor.submit(self.call_function, func_name, **func_args)
             self.task_queue.put(future)
             return ActionResponse(action=Action.RESPONSE, result=None, response="您好，正在查询信息中，一会查询完我会告诉你哟")
-        elif func.action == ToolType.ADD_SYS_PROMPT: #  = (5, "增加系统指定到对话历史中去")
-            result = self.call_function(func_name, **func_args)
+        elif func.action == ToolType.ADD_SYS_PROMPT:
             return ActionResponse(action=Action.ADDSYSTEMSPEAK, result=result, response=None)
         else:
-            result = self.call_function(func_name, **func_args)
-            return ActionResponse(action=Action.RESPONSE, result=result, response=None)
+            return ActionResponse(action=Action.RESPONSE, result=result, response=result)
 
 if __name__ == "__main__":
     pass

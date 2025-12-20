@@ -364,12 +364,14 @@ class Robot(ABC):
             elif result.action == Action.NONE:
                 return response_message
             elif result.action == Action.RESPONSE:
-                future = self.executor.submit(self.speak_and_play, result.response)
-                self.tts_queue.put(future)
-                response_message.append(f"\n工具执行结果: {result.response}")
+                if result.response:
+                    future = self.executor.submit(self.speak_and_play, result.response)
+                    self.tts_queue.put(future)
+                    response_message.append(result.response)
                 return response_message
             elif result.action == Action.REQLLM:
-                # 添加工具内容到对话上下文
+                # 添加工具调用和结果到对话历史，但不添加到 response_message（避免重复显示思考过程）
+                # 注意：这里我们选择不清空 response_message，因为之前的思考过程可能对用户有意义
                 self.dialogue.put(Message(role='assistant',
                                           tool_calls=[{"id": function_id, "function": {"arguments": json.dumps(function_arguments ,ensure_ascii=False),
                                                                                        "name": function_name},

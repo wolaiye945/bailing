@@ -23,7 +23,8 @@ def get_day_of_week()->ActionResponse:
     }
     # 获取星期几的中文名称
     weekday_name = chinese_weekdays[weekday_number]
-    response =  f"当前日期: {current_date}，当前时间: {current_time.strftime('%H点%M分%秒')}，星期几: {weekday_name}"
+    time_str = current_time.strftime('%H:%M:%S')
+    response =  f"当前日期: {current_date}，当前时间: {time_str}，星期几: {weekday_name}"
     return ActionResponse(Action.REQLLM, response, None)
 
 if __name__ == "__main__":
