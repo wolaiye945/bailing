@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import logging
 import threading
 from datetime import datetime
+import numpy as np
 
 # Fix HF_ENDPOINT if it's set without protocol
 if os.environ.get("HF_ENDPOINT") and not os.environ.get("HF_ENDPOINT").startswith("http"):
@@ -70,10 +71,21 @@ class FunASR(ASR):
                 os.makedirs(date_dir)
 
             tmpfile = os.path.join(date_dir, f"asr-{uuid.uuid4().hex}.wav")
-            self._save_audio_to_file(stream_in_audio, tmpfile)
+            
+            # 优化：在非调试模式下，我们可以并行保存文件和进行识别，或者直接使用内存数据
+            # 这里的 SenseVoiceSmall 支持直接传入 numpy 数组
+            audio_data = b''.join(stream_in_audio)
+            if not audio_data:
+                logger.warning("接收到空音频数据，跳过识别")
+                return None, None
+                
+            audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+
+            # 异步保存文件（不阻塞识别）
+            threading.Thread(target=self._save_audio_to_file, args=(stream_in_audio, tmpfile), daemon=True).start()
 
             res = self.model.generate(
-                input=tmpfile,
+                input=audio_np,
                 cache={},
                 language="auto",  # 语言选项: "zn", "en", "yue", "ja", "ko", "nospeech"
                 use_itn=True,

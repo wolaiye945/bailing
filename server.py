@@ -8,6 +8,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 import asyncio
 
+import os
 import argparse
 import json
 import logging
@@ -15,23 +16,6 @@ import socket
 import shutil
 import re
 from typing import Dict, Tuple, List
-
-
-# 配置日志记录
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),  # 控制台输出
-        logging.FileHandler('tmp/bailing.log')  # 文件输出
-    ]
-)
-from bailing import robot
-from bailing.utils import read_config
-
-# 获取根 logger
-logger = logging.getLogger(__name__)
-
 
 
 parser = argparse.ArgumentParser(description="Description of your script.")
@@ -44,6 +28,23 @@ parser.add_argument('--debug', action='store_true', help="开启调试模式 (�
 args = parser.parse_args()
 config_path = args.config_path
 debug_mode = args.debug
+
+# 配置日志记录
+log_level = logging.DEBUG if debug_mode else logging.INFO
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # 控制台输出
+        logging.FileHandler('tmp/bailing.log')  # 文件输出
+    ]
+)
+
+from bailing import robot
+from bailing.utils import read_config
+
+# 获取根 logger
+logger = logging.getLogger(__name__)
 
 # 读取配置文件
 config = read_config(config_path)

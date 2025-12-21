@@ -398,7 +398,7 @@ class Robot(ABC):
                             content_arguments = segment_text
                             continue
 
-                        if len(segment_text) <= max(2, start):
+                        if len(segment_text) < 2:
                             continue
                             
                         future = self.executor.submit(self.speak_and_play, segment_text)
@@ -529,7 +529,7 @@ class Robot(ABC):
                         flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
                         if flag_segment:
                             segment_text = clean_response_concat[start:index_segment + 1]
-                            if len(segment_text) <= max(2, start):
+                            if len(segment_text) < 2:
                                 continue
                             
                             logger.info(f"生成语音分句: {segment_text}")
