@@ -65,6 +65,7 @@ Robot 负责高效的任务管理与记忆管理，能够智能地处理用户�
 - **支持记忆功能**: 具备持续学习能力，能够记忆用户的偏好与历史对话，提供个性化的互动体验。
 - **支持工具调用**: 灵活集成外部工具，用户可通过语音直接请求信息或执行操作，提升助手的实用性。
 - **支持任务管理**: 高效管理用户任务，能够跟踪进度、设置提醒，并提供动态更新，确保用户不错过任何重要事项。
+- **安全认证机制**: 支持基于 Session 的账号密码登录验证，保障外网映射环境下的访问安全。
 
 ## 项目优势
 
@@ -100,8 +101,8 @@ Robot 负责高效的任务管理与记忆管理，能够智能地处理用户�
 
 3. 配置环境变量：
 
-     - 打开config/config.yaml 配置ASR LLM等相关配置
-     - 下载SenseVoiceSmall到目录models/SenseVoiceSmall [SenseVoiceSmall下载地址](https://huggingface.co/FunAudioLLM/SenseVoiceSmall/tree/main)
+104→     - 打开config/config.yaml 配置ASR LLM以及安全认证（Security）等相关配置
+105→     - 下载SenseVoiceSmall到目录models/SenseVoiceSmall [SenseVoiceSmall下载地址](https://huggingface.co/FunAudioLLM/SenseVoiceSmall/tree/main)
      - 去deepseek官网，获取配置api_key，[deepseek获取api_key](https://platform.deepseek.com/api_keys)，当然也可以配置openai、qwen、gemini、01yi等其他模型
      - 如果需要使用通用AIGC配置（测试中），不可用的话，可以使用tag 分支 v0.0.1 v0.0.2 
        - /third_party/OpenManus/config/config.toml  需要配置里面的 model、base_url、api_key 
@@ -129,7 +130,7 @@ Robot 负责高效的任务管理与记忆管理，能够智能地处理用户�
     ```
    python server.py # 不需要cd server
    ```
-   打开浏览器 http://localhost:8000 点击开始按钮，进行语音对话
+   打开浏览器 http://localhost:8000 进行登录后即可开始语音对话
 
 ## 使用说明
 
