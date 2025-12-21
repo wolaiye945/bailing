@@ -1411,6 +1411,16 @@
 
             async start() {
                 try {
+                    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                        this.addLog("警告: 正在非安全环境(非HTTPS/非localhost)下运行，浏览器可能拦截麦克风访问", 'error');
+                        alert("浏览器安全策略限制：在局域网访问时，必须使用 HTTPS 协议或在浏览器设置中开启授权，否则无法使用麦克风。\n\n建议：\n1. 使用 https:// 访问\n2. 或者在 Chrome/Edge 浏览器地址栏输入 chrome://flags/#unsafely-treat-insecure-origin-as-secure，并将当前地址设为允许。");
+                    }
+
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        this.addLog("错误: 浏览器不支持 getUserMedia 或权限被禁用", 'error');
+                        throw new Error("浏览器不支持麦克风访问或由于非安全上下文被禁用");
+                    }
+
                     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 

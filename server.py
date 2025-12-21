@@ -27,6 +27,7 @@ logging.basicConfig(
     ]
 )
 from bailing import robot
+from bailing.utils import read_config
 
 # 获取根 logger
 logger = logging.getLogger(__name__)
@@ -43,6 +44,12 @@ parser.add_argument('--debug', action='store_true', help="开启调试模式 (�
 args = parser.parse_args()
 config_path = args.config_path
 debug_mode = args.debug
+
+# 读取配置文件
+config = read_config(config_path)
+server_config = config.get("Server", {})
+host = server_config.get("host", "0.0.0.0")
+port = server_config.get("port", 8000)
 
 
 app = FastAPI()
@@ -229,22 +236,28 @@ def get_lan_ip():
 
 if __name__ == "__main__":
     lan_ip = get_lan_ip()
-    print(f"\n请在局域网中使用以下地址访问:")
-    print(f"https://{lan_ip}:8000\n")
-    # 生成自签名证书 (开发环境)
-    # openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+    
+    # 如需在局域网使用麦克风，请在 ssl 目录下放置 key.pem 和 cert.pem，或使用以下命令生成：
+    # openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem -days 365 -nodes
     import os
-    ssl_keyfile = "./key.pem"
-    ssl_certfile = "./cert.pem"
+    ssl_keyfile = "ssl/key.pem"
+    ssl_certfile = "ssl/cert.pem"
+    protocol = "https"
+    
     if not os.path.exists(ssl_keyfile) or not os.path.exists(ssl_certfile):
         ssl_keyfile = None
         ssl_certfile = None
-        print("Warning: SSL certificates not found, starting in HTTP mode.")
+        protocol = "http"
+        print("Warning: SSL 证书未找到 (ssl/key.pem, ssl/cert.pem)，将以 HTTP 模式启动。")
+        print("注意: 局域网访问时，非 HTTPS 模式可能导致浏览器禁用麦克风。")
+
+    print(f"\n请在局域网中使用以下地址访问:")
+    print(f"{protocol}://{lan_ip}:{port}\n")
 
     uvicorn.run(
         "server:app" if debug_mode else app,
-        host="0.0.0.0",
-        port=8000,
+        host=host,
+        port=port,
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile,
         ws_ping_interval=20,

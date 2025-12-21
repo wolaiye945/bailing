@@ -1,3 +1,7 @@
+# SSL certificates
+ssl/
+*.pem
+
 # Local configuration files
 config/config.yaml
 config/config - 副本.yaml
