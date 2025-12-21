@@ -1240,6 +1240,8 @@
             constructor(updateStatusFn, websocket) {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 this.audioQueue = [];
+                this.rawQueue = []; // 新增：原始音频数据队列
+                this.isDecoding = false; // 新增：解码状态锁
                 this.isPlaying = false;
                 this.shouldInterrupt = false;
                 this.log = document.getElementById('logContainer');
@@ -1268,27 +1270,36 @@
             }
 
             async playAudio(audioData) {
-                try {
-                    // 确保 AudioContext 已恢复（浏览器策略）
-                    if (this.audioContext.state === 'suspended') {
-                        await this.audioContext.resume();
-                    }
-                    
-                    const audioBuffer = await this.audioContext.decodeAudioData(audioData);
-                    this.audioQueue.push(audioBuffer);
-                    this.addLog(`收到音频, 队列大小: ${this.audioQueue.length}`);
-                    if (!this.isPlaying) {
-                        this.playNext();
-                    }
-                } catch (error) {
-                    this.addLog(`播放错误: ${error}`);
-                    console.error("Audio decode error:", error);
-                    // 如果是 ArrayBuffer，尝试打印前几个字节
-                    if (audioData instanceof ArrayBuffer) {
-                        const view = new Uint8Array(audioData.slice(0, 10));
-                        console.log("Audio data prefix:", view);
+                // 确保 AudioContext 已恢复（浏览器策略）
+                if (this.audioContext.state === 'suspended') {
+                    await this.audioContext.resume();
+                }
+                
+                // 将原始数据放入队列，由统一的循环解码，确保顺序
+                this.rawQueue.push(audioData);
+                this.processRawQueue();
+            }
+
+            async processRawQueue() {
+                if (this.isDecoding || this.rawQueue.length === 0) return;
+                
+                this.isDecoding = true;
+                while (this.rawQueue.length > 0) {
+                    const audioData = this.rawQueue.shift();
+                    try {
+                        const audioBuffer = await this.audioContext.decodeAudioData(audioData);
+                        this.audioQueue.push(audioBuffer);
+                        this.addLog(`音频解码完成, 播放队列大小: ${this.audioQueue.length}`);
+                        
+                        if (!this.isPlaying) {
+                            this.playNext();
+                        }
+                    } catch (error) {
+                        this.addLog(`解码错误: ${error}`);
+                        console.error("Audio decode error:", error);
                     }
                 }
+                this.isDecoding = false;
             }
 
             playNext() {

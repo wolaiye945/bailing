@@ -9,7 +9,7 @@ class TestResponseFilter(unittest.TestCase):
 
     def test_remove_think_tags_multiline(self):
         text = "<think>\nThinking about life...\nAnd everything.\n</think>\nHow are you?"
-        expected = "How are you?"
+        expected = "\nHow are you?"
         self.assertEqual(remove_think_tags(text), expected)
 
     def test_remove_think_tags_no_tags(self):
@@ -25,6 +25,11 @@ class TestResponseFilter(unittest.TestCase):
 
     def test_remove_think_tags_multiple(self):
         text = "<think>T1</think>Part 1<think>T2</think>Part 2"
+        expected = "Part 1Part 2"
+        self.assertEqual(remove_think_tags(text), expected)
+
+    def test_remove_think_tags_mixed(self):
+        text = "Part 1<think>T1</think>Part 2<think>T2"
         expected = "Part 1Part 2"
         self.assertEqual(remove_think_tags(text), expected)
 

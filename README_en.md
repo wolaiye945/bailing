@@ -7,7 +7,7 @@
 
 ## Features
 
-- **Efficient Open-Source Models**: Bailing utilizes multiple open-source models, ensuring an efficient and reliable voice conversation experience.
+- **Efficient Open-Source Models**: Bailing utilizes multiple open-source models, ensuring an efficient and reliable voice conversation experience. It features a zero-disorder audio synchronization mechanism using WebSocket handshakes and sequential decoding.
 - **No GPU Required**: Through optimization, it can be deployed locally while still delivering GPT-4-like performance.
 - **Modular Design**: ASR, VAD, LLM, and TTS modules are independent and can be replaced or upgraded as needed.
 - **Memory Support**: It has continuous learning capabilities, remembering user preferences and historical conversations for a personalized interaction experience.

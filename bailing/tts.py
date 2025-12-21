@@ -200,10 +200,15 @@ class CHATTTS(AbstractTTS):
                 params_refine_text=params_refine_text,
                 params_infer_code=params_infer_code,
             )
-            try:
-                torchaudio.save(tmpfile, torch.from_numpy(wavs[0]).unsqueeze(0), 24000)
-            except:
-                torchaudio.save(tmpfile, torch.from_numpy(wavs[0]), 24000)
+            # Ensure the audio is in int16 format and saved correctly
+            audio_data = wavs[0]
+            if audio_data.dtype != np.int16:
+                if audio_data.dtype == np.float32 or audio_data.dtype == np.float64:
+                    audio_data = (audio_data * 32767).astype(np.int16)
+            
+            import soundfile as sf
+            sf.write(tmpfile, audio_data, 24000, subtype='PCM_16')
+            
             self._log_execution_time(start_time)
             return tmpfile
         except Exception as e:
@@ -341,7 +346,12 @@ class KOKOROTTS(AbstractTTS):
             if all_audio:
                 import numpy as np
                 combined_audio = np.concatenate(all_audio)
-                sf.write(output_file, combined_audio, 24000)
+                # Ensure the audio is in int16 format to avoid "Unknown WAVE format" (IEEE FLOAT) issues
+                if combined_audio.dtype != np.int16:
+                    # Scale to int16 range if it's float
+                    if combined_audio.dtype == np.float32 or combined_audio.dtype == np.float64:
+                        combined_audio = (combined_audio * 32767).astype(np.int16)
+                sf.write(output_file, combined_audio, 24000, subtype='PCM_16')
                 return output_file
             return None
         except Exception as e:

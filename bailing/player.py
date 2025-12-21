@@ -134,12 +134,19 @@ class PygamePlayer(AbstractPlayer):
 
     def do_playing(self, audio_file):
         try:
-            while pygame.mixer.music.get_busy():
-                pygame.time.Clock().tick(100)
-            logger.debug("PygamePlayer 加载音频中")
-            pygame.mixer.music.load(audio_file)
-            logger.debug("PygamePlayer 加载音频结束，开始播放")
-            pygame.mixer.music.play()
+            # Use pydub to load the audio file as it's more robust than the standard wave module
+            audio = AudioSegment.from_file(audio_file)
+            
+            # Export to a temporary buffer or use sounddevice/pyaudio to play
+            # For simplicity and compatibility, we'll use pydub's data
+            samples = np.array(audio.get_array_of_samples())
+            
+            # Ensure we have the right shape and type for sounddevice
+            if audio.channels > 1:
+                samples = samples.reshape((-1, audio.channels))
+            
+            sd.play(samples, samplerate=audio.frame_rate)
+            sd.wait()
             logger.debug(f"播放完成：{audio_file}")
         except Exception as e:
             logger.error(f"播放音频失败: {e}")
@@ -204,6 +211,8 @@ class WebSocketPlayer(AbstractPlayer):
         self.loop = None
         self.playing_status = False
         self.lock = threading.Lock()  # 添加线程锁
+        self._playback_finished_event = threading.Event()
+        self._playback_finished_event.set()
 
     def init(self, websocket: WebSocket, loop):
         self.websocket = websocket
@@ -216,6 +225,12 @@ class WebSocketPlayer(AbstractPlayer):
     def set_playing_status(self, status):
         """正在播放和队列非空，为正在播放状态"""
         self.playing_status = status
+        if not status:
+            logger.debug("WebSocketPlayer: playback finished signal received")
+            self._playback_finished_event.set()
+        else:
+            logger.debug("WebSocketPlayer: playback started signal received")
+            self._playback_finished_event.clear()
 
     def do_playing(self, audio_file):
         try:
@@ -223,13 +238,25 @@ class WebSocketPlayer(AbstractPlayer):
                 wav_data = f.read()
             logger.info(f"websocket 发送音频文件：{audio_file}")
 
+            # 发送前先重置事件，确保我们会等待这次发送的播放完成
+            self._playback_finished_event.clear()
+
             asyncio.run_coroutine_threadsafe(
                 self.websocket.send_bytes(wav_data),
                 self.loop
             )
 
+            # 等待前端返回播放完成信号
+            # 设置较长的超时时间（如 60s），防止前端意外不返回导致后端卡死
+            finished = self._playback_finished_event.wait(timeout=60)
+            if not finished:
+                logger.warning(f"等待前端播放音频超时: {audio_file}")
+            else:
+                logger.debug(f"前端播放音频完成: {audio_file}")
+
         except Exception as e:
             logger.error(f"播放音频失败: {e}")
+            self._playback_finished_event.set() # 出错也要恢复，防止死锁
 
     def interrupt(self):
         """异步发送中断命令"""

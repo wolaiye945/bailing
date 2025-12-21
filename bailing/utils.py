@@ -38,7 +38,7 @@ def is_segment(tokens):
         return False
 
 def is_segment_sentence(tokens, start_index):
-    for i in range(len(tokens) - 1, start_index - 1, -1):
+    for i in range(start_index, len(tokens)):
         if tokens[i] in (",", ".", "?", "，", "。", "？", "！", "!", ";", "；", ":", "："):
             return True, i
     return False, None
@@ -69,7 +69,7 @@ def remove_think_tags(text):
     text = re.sub(r'<\|begin_of_box\|>.*?<\|end_of_box\|>', '', text, flags=re.DOTALL)
     text = re.sub(r'<\|begin_of_box\|>.*', '', text, flags=re.DOTALL)
     
-    return text.strip()
+    return text
 
 def format_think_sections(text):
     """将 <think> 标签和工具调用标签转换为更易读的格式"""

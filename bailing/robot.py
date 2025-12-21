@@ -36,39 +36,59 @@ logger = logging.getLogger(__name__)
 
 class Robot(ABC):
     def __init__(self, config_file, websocket = None, loop = None):
+        logger.info(f"Robot 正在从 {config_file} 初始化...")
         config = read_config(config_file)
         self.audio_queue = queue.Queue()
 
+        logger.info("初始化 Recorder...")
         self.recorder = recorder.create_instance(
             config["selected_module"]["Recorder"],
             config["Recorder"][config["selected_module"]["Recorder"]]
         )
 
+        logger.info("初始化 ASR...")
         self.asr = asr.create_instance(
             config["selected_module"]["ASR"],
             config["ASR"][config["selected_module"]["ASR"]]
         )
 
+        logger.info("初始化 LLM...")
         self.llm = llm.create_instance(
             config["selected_module"]["LLM"],
             config["LLM"][config["selected_module"]["LLM"]]
         )
 
+        logger.info("初始化 TTS...")
         self.tts = tts.create_instance(
             config["selected_module"]["TTS"],
             config["TTS"][config["selected_module"]["TTS"]]
         )
 
+        logger.info("初始化 VAD...")
         self.vad = vad.create_instance(
             config["selected_module"]["VAD"],
             config["VAD"][config["selected_module"]["VAD"]]
         )
 
-
+        logger.info("初始化 Player...")
         self.player = player.create_instance(
             config["selected_module"]["Player"],
             config["Player"][config["selected_module"]["Player"]]
         )
+
+        # 事件用于控制程序退出
+        self.stop_event = threading.Event()
+        # 线程锁与会话管理
+        self.chat_lock = False
+        self.chat_session_id = 0
+
+        # 保证tts是顺序的
+        self.tts_queue = queue.Queue()
+        # 初始化线程池
+        self.executor = ThreadPoolExecutor(max_workers=10)
+        
+        # 启动 TTS 优先级队列处理线程
+        self._tts_priority()
 
         self.task_queue = queue.Queue()
         self.task_manager = TaskManager(config.get("TaskManager"), self.task_queue)
@@ -97,22 +117,11 @@ class Robot(ABC):
         self.dialogue = Dialogue(config["Memory"]["dialogue_history_path"])
         self.dialogue.put(Message(role="system", content=self.prompt))
 
-        # 保证tts是顺序的
-        self.tts_queue = queue.Queue()
-        # 初始化线程池
-        self.executor = ThreadPoolExecutor(max_workers=10)
-
         self.vad_start = True
 
         # 打断相关配置
         self.INTERRUPT = config["interrupt"]
         self.silence_time_ms = int((1000 / 1000) * (16000 / 512))  # ms
-
-        # 线程锁
-        self.chat_lock = False
-
-        # 事件用于控制程序退出
-        self.stop_event = threading.Event()
 
         self.callback = None
 
@@ -144,27 +153,55 @@ class Robot(ABC):
         consumer_audio.start()
 
     def _tts_priority(self):
+        logger.info("正在启动 TTS 优先级处理线程...")
         def priority_thread():
+            logger.info("TTS 优先级处理线程已开始运行")
             while not self.stop_event.is_set():
                 try:
                     # 使用 timeout 允许检查 stop_event
-                    future = self.tts_queue.get(timeout=1.0)
+                    logger.debug("正在等待 TTS 任务...")
+                    task = self.tts_queue.get(timeout=1.0)
+                    if isinstance(task, tuple) and len(task) == 2:
+                        session_id, future = task
+                    else:
+                        # 兼容旧版本，如果队列里只有 future
+                        session_id = self.chat_session_id
+                        future = task
+
+                    # 检查会话是否仍然有效
+                    if session_id != self.chat_session_id:
+                        logger.info(f"忽略过期会话的 TTS 任务: session_id={session_id}, current={self.chat_session_id}")
+                        continue
+
+                    logger.info(f"获取到 TTS 任务，当前队列大小: {self.tts_queue.qsize()}")
                     try:
-                        tts_file = future.result(timeout=5)
+                        # 设置较长的超时（如 60s），防止 TTS 任务永久卡死导致整个播放队列阻塞
+                        # 同时保留按序处理的特性
+                        logger.info("正在等待 TTS 任务执行结果...")
+                        tts_file = future.result(timeout=60) 
+                        logger.info(f"TTS 任务执行完成，生成文件: {tts_file}")
                     except TimeoutError:
-                        logger.error("TTS 任务超时")
+                        logger.error("TTS 任务执行超过 60s，强制跳过当前片段以恢复队列")
                         continue
                     except Exception as e:
                         logger.error(f"TTS 任务出错: {e}")
                         continue
-                    if tts_file is None:
+
+                    # 再次检查会话，因为 future.result() 可能等了很久
+                    if session_id != self.chat_session_id:
+                        logger.info(f"TTS 任务完成后发现会话已失效，跳过播放: session_id={session_id}")
                         continue
-                    logger.debug(f"_tts_priority: 准备播放 {tts_file}")
+
+                    if tts_file is None:
+                        logger.warning("TTS 文件为 None，跳过播放")
+                        continue
+                    logger.info(f"_tts_priority: 准备播放 {tts_file}")
                     self.player.play(tts_file)
                 except queue.Empty:
                     continue
                 except Exception as e:
                     logger.error(f"tts_priority priority_thread: {e}")
+            logger.info("TTS 优先级处理线程已退出")
         tts_priority = threading.Thread(target=priority_thread, daemon=True)
         tts_priority.start()
 
@@ -172,6 +209,11 @@ class Robot(ABC):
         """中断当前的语音播放"""
         logger.info("Interrupting current playback.")
         self.player.stop()
+        # 清空 tts 队列，防止旧的 segment 在打断后继续播放
+        with self.tts_queue.mutex:
+            self.tts_queue.queue.clear()
+        self.chat_lock = False # 重置 chat_lock，允许打断 LLM 生成
+        self.chat_session_id += 1 # 增加会话 ID，让旧的 chat 线程失效
 
     def shutdown(self):
         """关闭所有资源，确保程序安全退出"""
@@ -189,8 +231,6 @@ class Robot(ABC):
         logger.info("Started recording.")
         # vad 实时识别
         self._stream_vad()
-        # tts优先级队列
-        self._tts_priority()
 
     def _duplex(self):
         # 处理识别结果
@@ -215,7 +255,7 @@ class Robot(ABC):
                 and not self.player.get_playing_status() and self.chat_lock is False:
             result = self.task_queue.get()
             future = self.executor.submit(self.speak_and_play, result.response)
-            self.tts_queue.put(future)
+            self.tts_queue.put((self.chat_session_id, future))
 
         """ 语音唤醒
         if time.time() - self.start_time>=60:
@@ -303,22 +343,28 @@ class Robot(ABC):
         if text is None or len(text)<=0:
             logger.info(f"无需tts转换，query为空，{text}")
             return None
-        tts_file = self.tts.to_tts(text)
+        logger.info(f"开始 TTS 转换: {text}")
+        try:
+            tts_file = self.tts.to_tts(text)
+        except Exception as e:
+            logger.error(f"TTS 转换抛出异常: {e}", exc_info=True)
+            return None
+            
         if tts_file is None:
             logger.error(f"tts转换失败，{text}")
             return None
-        logger.debug(f"TTS 文件生成完毕{self.chat_lock}")
-        #if self.chat_lock is False:
-        #    return None
+        logger.info(f"TTS 文件生成完毕: {tts_file}, 当前 chat_lock: {self.chat_lock}")
         # 开始播放
-        # self.player.play(tts_file)
         return tts_file
 
-    def chat_tool(self, query, depth=0):
+    def chat_tool(self, query, depth=0, session_id=None):
         # 限制递归深度，防止死循环
         if depth > 5:
             logger.error("达到最大工具调用深度，停止递归")
             return ["抱歉，我陷入了处理循环，请尝试换个方式提问。"]
+
+        if session_id is None:
+            session_id = self.chat_session_id
 
         # 打印逐步生成的响应内容
         start = 0
@@ -343,8 +389,8 @@ class Robot(ABC):
                 logger.info("检测到 stop_event，停止 chat_tool LLM 响应迭代")
                 break
             
-            if not self.chat_lock:
-                logger.info("检测到 chat_lock 被外部重置，停止 chat_tool LLM 响应迭代（打断）")
+            if not self.chat_lock or (session_id is not None and session_id != self.chat_session_id):
+                logger.info(f"检测到会话失效 (lock={self.chat_lock}, session={session_id}/{self.chat_session_id})，停止 chat_tool LLM 响应迭代")
                 break
 
             content, tools_call = chunk
@@ -388,31 +434,40 @@ class Robot(ABC):
                     end_time = time.time()
                     logger.debug(f"大模型返回时间: {end_time - start_time} 秒, token={content}")
                     
-                    flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
-                    if flag_segment:
-                        segment_text = clean_response_concat[start:index_segment + 1]
-                        
-                        # 再次检查 segment_text 是否包含工具调用标记
-                        if "```" in segment_text or "<|begin_of_box|>" in segment_text:
-                            tool_call_flag = True
-                            content_arguments = segment_text
-                            continue
-
-                        if len(segment_text) < 2:
-                            continue
+                    # 循环查找所有可能的分句，处理一个 chunk 中包含多个句子的情况
+                    while True:
+                        flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
+                        if flag_segment:
+                            segment_text = clean_response_concat[start:index_segment + 1].strip()
                             
-                        future = self.executor.submit(self.speak_and_play, segment_text)
-                        self.tts_queue.put(future)
-                        start = index_segment + 1
+                            # 再次检查 segment_text 是否包含工具调用标记
+                            if "```" in segment_text or "<|begin_of_box|>" in segment_text:
+                                tool_call_flag = True
+                                content_arguments = segment_text
+                                break # 跳出 while True 循环，外层会处理 tool_call_flag
+    
+                            if len(segment_text) >= 1:
+                                logger.info(f"[{session_id}] 识别到分句 (start={start}, end={index_segment}): {segment_text}")
+                                future = self.executor.submit(self.speak_and_play, segment_text)
+                                self.tts_queue.put((session_id, future))
+                                logger.debug(f"[{session_id}] 分句已入队，当前队列大小: {self.tts_queue.qsize()}")
+                            start = index_segment + 1
+                        else:
+                            break
+                    
+                    if tool_call_flag:
+                        continue
 
         if not tool_call_flag:
             clean_response_concat = remove_think_tags("".join(response_message))
             if start < len(clean_response_concat):
-                segment_text = clean_response_concat[start:]
+                segment_text = clean_response_concat[start:].strip()
                 # 确保最后一部分也不是工具调用
-                if "```" not in segment_text and "<|begin_of_box|>" not in segment_text:
+                if segment_text and "```" not in segment_text and "<|begin_of_box|>" not in segment_text:
+                    logger.info(f"[{session_id}] 识别到最后分句 (start={start}): {segment_text}")
                     future = self.executor.submit(self.speak_and_play, segment_text)
-                    self.tts_queue.put(future)
+                    self.tts_queue.put((session_id, future))
+                    logger.debug(f"[{session_id}] 最后分句已入队")
         else:
             # 处理函数调用
             if function_id is None:
@@ -441,7 +496,7 @@ class Robot(ABC):
             elif result.action == Action.RESPONSE:
                 if result.response:
                     future = self.executor.submit(self.speak_and_play, result.response)
-                    self.tts_queue.put(future)
+                    self.tts_queue.put((session_id, future))
                     response_message.append(result.response)
                 return response_message
             elif result.action == Action.REQLLM:
@@ -454,7 +509,7 @@ class Robot(ABC):
                                                        "type": 'function', "index": 0}]))
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.result))
                 # 递归调用以处理后续回复
-                sub_response = self.chat_tool(query, depth=depth + 1)
+                sub_response = self.chat_tool(query, depth=depth + 1, session_id=session_id)
                 if sub_response:
                     response_message.extend(sub_response)
             elif result.action == Action.ADDSYSTEM:
@@ -470,7 +525,7 @@ class Robot(ABC):
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.response))
                 self.dialogue.put(Message(**result.result))
                 self.dialogue.put(Message(role="user", content="ok"))
-                sub_response = self.chat_tool(query, depth=depth + 1)
+                sub_response = self.chat_tool(query, depth=depth + 1, session_id=session_id)
                 if sub_response:
                     response_message.extend(sub_response)
             else:
@@ -488,11 +543,12 @@ class Robot(ABC):
         response_message = []
         start = 0
         self.chat_lock = True
+        current_session = self.chat_session_id
         try:
             if self.start_task_mode:
                 logger.debug("进入任务模式 (chat_tool)")
                 # 获取当前对话历史，让 chat_tool 自己处理
-                response_message_tool = self.chat_tool(query)
+                response_message_tool = self.chat_tool(query, session_id=current_session)
                 if isinstance(response_message_tool, list):
                     response_message.extend(response_message_tool)
                 else:
@@ -510,40 +566,46 @@ class Robot(ABC):
                     return None
                 
                 # 提交 TTS 任务到线程池
-                    logger.debug("开始迭代 LLM 响应")
-                    for content in llm_responses:
-                        if self.stop_event.is_set():
-                            logger.info("检测到 stop_event，停止 LLM 响应迭代")
-                            break
-                        
-                        if not self.chat_lock:
-                            logger.info("检测到 chat_lock 被外部重置，停止 LLM 响应迭代（打断）")
-                            break
-                        
-                        response_message.append(content)
-                        response_message_concat = "".join(response_message)
-                        
-                        # 过滤掉思考部分再进行分句
-                        clean_response_concat = remove_think_tags(response_message_concat)
-                        
+                logger.debug("开始迭代 LLM 响应")
+                for content in llm_responses:
+                    if self.stop_event.is_set():
+                        logger.info("检测到 stop_event，停止 LLM 响应迭代")
+                        break
+                    
+                    if not self.chat_lock or current_session != self.chat_session_id:
+                        logger.info(f"检测到会话失效 (lock={self.chat_lock}, session={current_session}/{self.chat_session_id})，停止 LLM 响应迭代")
+                        break
+                    
+                    response_message.append(content)
+                    response_message_concat = "".join(response_message)
+                    
+                    # 过滤掉思考部分再进行分句
+                    clean_response_concat = remove_think_tags(response_message_concat)
+                    
+                    # 循环查找所有可能的分句，处理一个 chunk 中包含多个句子的情况
+                    while True:
                         flag_segment, index_segment = is_segment_sentence(clean_response_concat, start)
                         if flag_segment:
-                            segment_text = clean_response_concat[start:index_segment + 1]
-                            if len(segment_text) < 2:
-                                continue
-                            
-                            logger.info(f"生成语音分句: {segment_text}")
-                            future = self.executor.submit(self.speak_and_play, segment_text)
-                            self.tts_queue.put(future)
+                            segment_text = clean_response_concat[start:index_segment + 1].strip()
+                            if len(segment_text) >= 1:
+                                logger.info(f"[{current_session}] 识别到分句 (start={start}, end={index_segment}): {segment_text}")
+                                future = self.executor.submit(self.speak_and_play, segment_text)
+                                self.tts_queue.put((current_session, future))
+                                logger.debug(f"[{current_session}] 分句已入队，当前队列大小: {self.tts_queue.qsize()}")
                             start = index_segment + 1
-
+                        else:
+                            break
+                
                 # 处理剩余的响应
-                clean_response_concat = remove_think_tags("".join(response_message))
-                if start < len(clean_response_concat):
-                    segment_text = clean_response_concat[start:]
-                    logger.info(f"生成语音最后分句: {segment_text}")
-                    future = self.executor.submit(self.speak_and_play, segment_text)
-                    self.tts_queue.put(future)
+                if self.chat_lock and current_session == self.chat_session_id:
+                    clean_response_concat = remove_think_tags("".join(response_message))
+                    if start < len(clean_response_concat):
+                        segment_text = clean_response_concat[start:].strip()
+                        if segment_text:
+                            logger.info(f"[{current_session}] 识别到最后分句 (start={start}): {segment_text}")
+                            future = self.executor.submit(self.speak_and_play, segment_text)
+                            self.tts_queue.put((current_session, future))
+                            logger.debug(f"[{current_session}] 最后分句已入队")
         finally:
             if hasattr(self.player, 'send_status'):
                 self.player.send_status("idle")

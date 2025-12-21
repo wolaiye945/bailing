@@ -9,7 +9,7 @@ WakeWord: 百聆
 
 Server:
   host: 0.0.0.0
-  port: 5180
+  port: 15181
 
 Security:
   enabled: true
@@ -44,8 +44,8 @@ ASR:
 VAD:
   SileroVAD:
     sampling_rate: 16000
-    threshold: 0.5
-    min_silence_duration_ms: 200  # 如果说话停顿比较长，可以把这个值设置大一些
+    threshold: 0.8
+    min_silence_duration_ms: 800  # 如果说话停顿比较长，可以把这个值设置大一些
 
 LLM:
   OpenAILLM:
