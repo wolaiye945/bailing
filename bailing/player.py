@@ -262,6 +262,23 @@ class WebSocketPlayer(AbstractPlayer):
         except Exception as e:
             logger.error(f"发送消息失败: {e}")
 
+    def send_status(self, status):
+        """发送状态更新"""
+        if not self.websocket or self.websocket.client_state.value != 1:
+            return
+        
+        data = {
+            "type": "status_update",
+            "status": status
+        }
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.websocket.send_text(json.dumps(data)),
+                self.loop
+            )
+        except Exception as e:
+            logger.error(f"发送状态更新失败: {e}")
+
     def stop(self):
         """停止播放器"""
         try:

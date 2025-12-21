@@ -127,11 +127,35 @@
         .status-box {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             padding: 15px 20px;
             background: rgba(15, 23, 42, 0.5);
             border-radius: 15px;
             margin-bottom: 20px;
             border: 1px solid rgba(74, 108, 247, 0.2);
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+        }
+
+        .settings-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .settings-input {
+            width: 50px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid var(--glass-border);
+            color: var(--text-light);
+            border-radius: 5px;
+            padding: 2px 5px;
+            text-align: center;
         }
 
         .status-indicator {
@@ -159,6 +183,41 @@
 
         .status-indicator.disconnected {
             background: var(--accent);
+        }
+
+        .status-indicator.processing {
+            background: #a855f7; /* 紫色 */
+            animation: pulse 1s infinite;
+        }
+
+        .status-indicator.thinking {
+            background: #3b82f6; /* 蓝色 */
+            animation: bounce 1s infinite;
+        }
+
+        .status-indicator.responding {
+            background: #10b981; /* 绿色 */
+            animation: pulse 0.5s infinite;
+        }
+
+        .status-indicator.listening {
+            background: #ef4444; /* 红色 */
+            animation: pulse 0.8s infinite;
+        }
+
+        .status-indicator.speaking {
+            background: #f59e0b; /* 橙色 */
+            animation: wave 1s infinite;
+        }
+
+        @keyframes wave {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(1.5); }
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
 
         .status-indicator.recording {
@@ -289,13 +348,16 @@
             align-self: flex-end;
             border-bottom-right-radius: 4px;
             color: white;
+            box-shadow: 0 4px 15px rgba(74, 108, 247, 0.3);
         }
 
         .message.role-assistant, .message.role-bot {
-            background: rgba(30, 41, 59, 0.6);
+            background: rgba(30, 41, 59, 0.9);
             align-self: flex-start;
             border-bottom-left-radius: 4px;
             color: var(--text-light);
+            border-left: 4px solid var(--primary);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
         .message.role-system {
@@ -316,7 +378,7 @@
         }
 
         /* Markdown 样式优化 */
-        .message-content p { margin-bottom: 0.8em; }
+        .message-content p { margin-bottom: 1em; }
         .message-content p:last-child { margin-bottom: 0; }
         .message-content code {
             background: rgba(0, 0, 0, 0.3);
@@ -324,18 +386,60 @@
             border-radius: 4px;
             font-family: 'Fira Code', 'Consolas', monospace;
             font-size: 0.9em;
+            color: var(--accent);
         }
         .message-content pre {
-            background: rgba(0, 0, 0, 0.4);
+            background: rgba(10, 15, 30, 0.9);
             padding: 15px;
             border-radius: 12px;
             overflow-x: auto;
-            margin: 10px 0;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin: 15px 0;
+            border: 1px solid rgba(74, 108, 247, 0.3);
+        }
+        .message-content pre code {
+            background: transparent;
+            padding: 0;
+            color: #e2e8f0;
         }
         .message-content ul, .message-content ol {
-            margin-left: 20px;
-            margin-bottom: 10px;
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+        .message-content li {
+            margin-bottom: 5px;
+        }
+        .message-content h1, .message-content h2, .message-content h3 {
+            margin: 15px 0 10px 0;
+            color: var(--primary);
+        }
+        .message-content blockquote {
+            border-left: 4px solid var(--primary);
+            padding-left: 15px;
+            color: var(--text-muted);
+            margin: 10px 0;
+            background: rgba(74, 108, 247, 0.05);
+            border-radius: 0 8px 8px 0;
+            padding-top: 5px;
+            padding-bottom: 5px;
+        }
+        .message-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+        .message-content th, .message-content td {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 8px 12px;
+            text-align: left;
+        }
+        .message-content th {
+            background: rgba(74, 108, 247, 0.1);
+        }
+
+        .message-content img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin: 10px 0;
         }
 
         .role-tag {
@@ -605,8 +709,14 @@
     <!-- 控制面板 -->
     <div class="control-panel">
         <div class="status-box">
-            <div class="status-indicator disconnected"></div>
-            <div class="status-text">状态: 未连接</div>
+            <div class="status-info">
+                <div class="status-indicator disconnected"></div>
+                <div class="status-text">状态: 未连接</div>
+            </div>
+            <div class="settings-box">
+                <label for="historyLimit">历史记录上限:</label>
+                <input type="number" id="historyLimit" class="settings-input" value="20" min="1" max="100">
+            </div>
         </div>
 
         <div class="control-buttons">
@@ -719,8 +829,10 @@
         const refreshTempFilesBtn = document.getElementById('refreshTempFilesBtn');
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
         const selectedCountSpan = document.getElementById('selectedCount');
+        const historyLimitInput = document.getElementById('historyLimit');
 
         let selectedFiles = new Set();
+        let dialogueHistory = []; // 对话历史记录
 
         // 状态管理
         let websocket = null;
@@ -735,9 +847,28 @@
 
         // 更新状态显示
         function updateStatus(status, message) {
+            // status: connecting, connected, disconnected, processing, thinking, responding, listening, speaking
             connectionStatus = status;
             statusIndicator.className = 'status-indicator ' + status;
-            statusText.textContent = '状态: ' + message;
+            if (message) {
+                statusText.textContent = '状态: ' + message;
+            } else {
+                const statusMap = {
+                    'connecting': '连接中...',
+                    'connected': '已连接 (就绪)',
+                    'disconnected': '未连接',
+                    'processing': '正在处理语音...',
+                    'thinking': '正在思考...',
+                    'responding': '正在回复...',
+                    'listening': '正在听你说...',
+                    'speaking': '正在说话...',
+                    'idle': '已连接 (就绪)'
+                };
+                statusText.textContent = '状态: ' + (statusMap[status] || status);
+                if (status === 'idle') {
+                    statusIndicator.className = 'status-indicator connected';
+                }
+            }
         }
 
         // 添加日志
@@ -804,6 +935,8 @@
                             } else if (message.type == 'update_dialogue') {
                                 // addLog("收到对话更新");
                                 updateDialogue(message.data);
+                            } else if (message.type === 'status_update') {
+                                updateStatus(message.status);
                             } else {
                                 addLog("收到未知指令数据：" + event.data);
                             }
@@ -1013,26 +1146,59 @@
         refreshTempFilesBtn.addEventListener('click', fetchTempFiles);
         batchDeleteBtn.addEventListener('click', batchDelete);
 
+        historyLimitInput.addEventListener('change', () => {
+            const maxHistory = parseInt(historyLimitInput.value) || 20;
+            if (dialogueHistory.length > maxHistory) {
+                dialogueHistory = dialogueHistory.slice(-maxHistory);
+                updateDialogue([]); // 重新渲染，不添加新消息
+            }
+        });
+
         window.onclick = (event) => {
             if (event.target === tempFilesModal) {
                 tempFilesModal.style.display = 'none';
             }
         };
 
+        // 配置 marked
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                breaks: true, // 允许回车换行
+                gfm: true,    // 使用 GitHub 风格的 Markdown
+                headerIds: false
+            });
+        }
+
         // 更新对话
-        function updateDialogue(dialogue) {
+        function updateDialogue(newMessages) {
             const container = document.getElementById('dialogue-container');
+            const maxHistory = parseInt(historyLimitInput.value) || 20;
+
+            // 如果 newMessages 不是数组，包装成数组
+            const messagesToAdd = Array.isArray(newMessages) ? newMessages : [newMessages];
             
-            // 清空容器重新渲染 (支持 Markdown 后更可靠)
+            // 将新消息添加到历史记录并保存时间戳
+            const now = new Date();
+            const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            
+            const messagesToAddWithTime = messagesToAdd.map(msg => ({
+                ...msg,
+                timestamp: msg.timestamp || timestamp
+            }));
+            
+            dialogueHistory = [...dialogueHistory, ...messagesToAddWithTime];
+            
+            // 应用历史记录上限
+            if (dialogueHistory.length > maxHistory) {
+                dialogueHistory = dialogueHistory.slice(-maxHistory);
+            }
+
+            // 清空容器重新渲染
             container.innerHTML = '';
 
-            dialogue.forEach(message => {
+            dialogueHistory.forEach(message => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message role-${message.role}`;
-
-                // 获取当前时间 (实际应用中建议从消息对象获取时间戳)
-                const now = new Date();
-                const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
                 // 角色标签文本
                 const roleText = {
@@ -1044,14 +1210,19 @@
                 }[message.role] || message.role;
 
                 // 使用 marked 解析 Markdown
-                const renderedContent = typeof marked !== 'undefined' ? marked.parse(message.content) : message.content;
+                let renderedContent = message.content;
+                if (typeof marked !== 'undefined') {
+                    // 确保 content 是字符串
+                    const contentStr = String(message.content || '');
+                    renderedContent = marked.parse(contentStr);
+                }
 
                 messageDiv.innerHTML = `
                     <div class="role-tag">${roleText}</div>
                     <div class="message-content">
                         ${renderedContent}
                     </div>
-                    <div class="timestamp">${timestamp}</div>
+                    <div class="timestamp">${message.timestamp}</div>
                 `;
 
                 container.appendChild(messageDiv);
@@ -1121,20 +1292,20 @@
             playNext() {
                 if (this.audioQueue.length === 0) {
                     this.isPlaying = false;
+                    this.updateStatus('idle');
                     return;
                 }
 
                 this.isPlaying = true;
+                this.updateStatus('speaking');
                 const audioBuffer = this.audioQueue.shift();
                 const source = this.audioContext.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(this.audioContext.destination);
-                this.source = source;  // <== 添加这句
-
+                this.source = source;
 
                 const duration = audioBuffer.duration.toFixed(1);
                 this.addLog(`开始播放 (时长: ${duration}秒)`);
-                this.updateStatus(`播放中 (剩余: ${this.audioQueue.length + 1}段)`, 'playing');
                 this.sendPlaybackStatus('playing', this.audioQueue.length);
                 source.onended = () => {
                     this.addLog("播放完成");
@@ -1150,7 +1321,7 @@
                         this.shouldInterrupt = false;
 
                         if (this.audioQueue.length === 0) {
-                            this.updateStatus("就绪");
+                            this.updateStatus("idle");
                         }
                     }
                 };

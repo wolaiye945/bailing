@@ -37,10 +37,12 @@ parser = argparse.ArgumentParser(description="Description of your script.")
 
 # Add arguments
 parser.add_argument('--config_path', type=str, help="配置文件", default="config/config.yaml")
+parser.add_argument('--debug', action='store_true', help="开启调试模式 (热重载)")
 
 # Parse arguments
 args = parser.parse_args()
 config_path = args.config_path
+debug_mode = args.debug
 
 
 app = FastAPI()
@@ -240,11 +242,12 @@ if __name__ == "__main__":
         print("Warning: SSL certificates not found, starting in HTTP mode.")
 
     uvicorn.run(
-        app,
+        "server:app" if debug_mode else app,
         host="0.0.0.0",
         port=8000,
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile,
         ws_ping_interval=20,
-        ws_ping_timeout=30
+        ws_ping_timeout=30,
+        reload=debug_mode
     )

@@ -217,6 +217,8 @@ class Robot(ABC):
         if vad_status is None:
             return
         if "start" in vad_status:
+            if hasattr(self.player, 'send_status'):
+                self.player.send_status("listening")
             if self.player.get_playing_status() or self.chat_lock is True:  # 正在播放，打断场景
                 if self.INTERRUPT:
                     self.chat_lock = False
@@ -238,18 +240,26 @@ class Robot(ABC):
                 
                 def asr_and_chat(data):
                     try:
+                        if hasattr(self.player, 'send_status'):
+                            self.player.send_status("processing")
                         logger.info("开始 ASR 识别...")
                         text, tmpfile = self.asr.recognizer(data)
                         if text is None or not text.strip():
                             logger.info("ASR 识别结果为空，跳过处理。")
+                            if hasattr(self.player, 'send_status'):
+                                self.player.send_status("idle")
                             return
                         
                         logger.info(f"ASR 识别成功: {text}")
+                        if hasattr(self.player, 'send_status'):
+                            self.player.send_status("thinking")
                         if self.callback:
                             self.callback({"role": "user", "content": str(text)})
                         self.chat(text)
                     except Exception as e:
                         logger.error(f"ASR/Chat 异步处理出错: {e}", exc_info=True)
+                        if hasattr(self.player, 'send_status'):
+                            self.player.send_status("idle")
                     finally:
                         logger.info("ASR/Chat 异步处理线程结束")
 
@@ -324,6 +334,10 @@ class Robot(ABC):
 
             content, tools_call = chunk
             
+            if len(response_message) == 0 and not tool_call_flag:
+                if hasattr(self.player, 'send_status'):
+                    self.player.send_status("responding")
+
             # 尽早检测工具调用
             if tools_call is not None:
                 tool_call_flag = True
@@ -516,6 +530,8 @@ class Robot(ABC):
                     future = self.executor.submit(self.speak_and_play, segment_text)
                     self.tts_queue.put(future)
         finally:
+            if hasattr(self.player, 'send_status'):
+                self.player.send_status("idle")
             self.chat_lock = False
             logger.info(f"对话处理完成: {query}")
 
