@@ -250,7 +250,8 @@ if __name__ == "__main__":
         ssl_certfile = None
         protocol = "http"
         print("Warning: SSL 证书未找到 (ssl/key.pem, ssl/cert.pem)，将以 HTTP 模式启动。")
-        print("注意: 局域网访问时，非 HTTPS 模式可能导致浏览器禁用麦克风。")
+        print("注意: 局域网访问或通过域名访问时，非 HTTPS 模式可能导致浏览器禁用麦克风。")
+        print("如果您使用了反向代理（如 Nginx/Caddy），请确保代理配置了正确的 SSL 证书，并转发 X-Forwarded-Proto 头。")
 
     print(f"\n请在局域网中使用以下地址访问:")
     print(f"{protocol}://{lan_ip}:{port}\n")
@@ -263,5 +264,7 @@ if __name__ == "__main__":
         ssl_certfile=ssl_certfile,
         ws_ping_interval=20,
         ws_ping_timeout=30,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
         reload=debug_mode
     )
