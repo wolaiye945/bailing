@@ -1,9 +1,11 @@
 import threading
 import time
 
-from fastapi import FastAPI, WebSocket, Query, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, Query, WebSocketDisconnect, Form, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
 import asyncio
@@ -52,8 +54,14 @@ server_config = config.get("Server", {})
 host = server_config.get("host", "0.0.0.0")
 port = server_config.get("port", 8000)
 
+# 安全配置
+security_config = config.get("Security", {})
+SECURITY_ENABLED = security_config.get("enabled", False)
+AUTH_USERNAME = security_config.get("username", "admin")
+AUTH_PASSWORD = security_config.get("password", "bailing123")
+SECRET_KEY = security_config.get("secret_key", "bailing_secret_key_change_me")
 
-app = FastAPI()
+
 TIMEOUT = 600  # 60 秒不活跃断开
 active_robots: Dict[str, list] = {}
 
@@ -88,6 +96,58 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 身份验证辅助函数
+async def get_current_user(request: Request):
+    if not SECURITY_ENABLED:
+        return "admin"
+    user = request.session.get("user")
+    if not user:
+        return None
+    return user
+
+# 登录相关路由
+@app.get("/login")
+async def login_page():
+    return FileResponse("static/login.html")
+
+@app.post("/login")
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+        request.session["user"] = username
+        return JSONResponse({"status": "ok"})
+    return JSONResponse({"status": "error", "message": "Invalid credentials"}, status_code=401)
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/login")
+
+# 中间件：检查身份验证
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not SECURITY_ENABLED:
+        return await call_next(request)
+    
+    # 允许访问登录页面和静态资源
+    path = request.url.path
+    if path in ["/login", "/logout"] or path.startswith("/static/"):
+        return await call_next(request)
+    
+    # 检查会话
+    user = request.session.get("user")
+    if not user:
+        # 如果是 API 请求，返回 401
+        if path.startswith("/temp_files"):
+            return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+        # 如果是页面请求，重定向到登录页
+        return RedirectResponse(url="/login")
+    
+    return await call_next(request)
+
+# 添加 Session 中间件 (必须在 auth_middleware 之后添加，以确保它在 request 阶段先运行)
+if SECURITY_ENABLED:
+    app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 
 
@@ -148,6 +208,14 @@ async def delete_date_files(date_str: str):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...)):
+    # 检查身份验证
+    if SECURITY_ENABLED:
+        user = websocket.session.get("user")
+        if not user:
+            logger.warning(f"WebSocket 拒绝未授权访问: user_id={user_id}")
+            await websocket.close(code=1008) # Policy Violation
+            return
+
     await websocket.accept()
     loop = asyncio.get_event_loop()
     logger.info(f"WebSocket连接已建立: user_id={user_id}")
