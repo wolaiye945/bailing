@@ -70,6 +70,10 @@ class Robot(ABC):
             config["Player"][config["selected_module"]["Player"]]
         )
 
+        self.task_queue = queue.Queue()
+        self.task_manager = TaskManager(config.get("TaskManager"), self.task_queue)
+        self.start_task_mode = config.get("StartTaskMode")
+
         memory_config = config.get("Memory")
         if memory_config and memory_config.get("enabled", True):
             self.memory = memory.Memory(memory_config)
@@ -77,9 +81,19 @@ class Robot(ABC):
         else:
             self.memory = None
             self.memory_text = ""
-        self.prompt = sys_prompt.replace("{memory}", self.memory_text).strip()
+        
+        current_sys_prompt = sys_prompt
+        # 如果任务管理器未启用，或者未开启任务模式，则移除工具调用相关的提示词
+        if not self.task_manager.enabled or not self.start_task_mode:
+            # 移除包含 "调用工具" 或 "function_name" 的行，这些通常与工具调用说明相关
+            lines = current_sys_prompt.split('\n')
+            filtered_lines = [line for line in lines if "调用工具" not in line and "function_name" not in line]
+            current_sys_prompt = '\n'.join(filtered_lines)
+
+        self.prompt = current_sys_prompt.replace("{memory}", self.memory_text).strip()
 
         self.vad_queue = queue.Queue()
+        self.max_history = config.get("Memory", {}).get("max_history", 15)
         self.dialogue = Dialogue(config["Memory"]["dialogue_history_path"])
         self.dialogue.put(Message(role="system", content=self.prompt))
 
@@ -106,10 +120,6 @@ class Robot(ABC):
 
         # 初始化单例
         #rag.Rag(config["Rag"])  # 第一次初始化
-
-        self.task_queue = queue.Queue()
-        self.task_manager = TaskManager(config.get("TaskManager"), self.task_queue)
-        self.start_task_mode = config.get("StartTaskMode")
 
         if config["selected_module"]["Player"].lower().find("websocket") > -1:
             self.player.init(websocket, loop)
@@ -304,12 +314,17 @@ class Robot(ABC):
         # self.player.play(tts_file)
         return tts_file
 
-    def chat_tool(self, query):
+    def chat_tool(self, query, depth=0):
+        # 限制递归深度，防止死循环
+        if depth > 5:
+            logger.error("达到最大工具调用深度，停止递归")
+            return ["抱歉，我陷入了处理循环，请尝试换个方式提问。"]
+
         # 打印逐步生成的响应内容
         start = 0
         try:
             start_time = time.time()  # 记录开始时间
-            llm_responses = self.llm.response_call(self.dialogue.get_llm_dialogue(), functions_call=self.task_manager.get_functions())
+            llm_responses = self.llm.response_call(self.dialogue.get_llm_dialogue(max_history=self.max_history), functions_call=self.task_manager.get_functions())
         except Exception as e:
             #self.chat_lock = False
             logger.error(f"LLM 处理出错 {query}: {e}")
@@ -349,9 +364,9 @@ class Robot(ABC):
                     function_arguments += tools_call[0].function.arguments
             
             if content is not None and len(content) > 0:
-                # 检查是否包含代码块标记，这通常意味着工具调用（对于某些模型）
+                # 检查是否包含代码块标记或工具箱标记，这通常意味着工具调用（对于某些模型）
                 # 如果已经有了原生的 tools_call，就不再尝试从 content 中解析 JSON
-                if tools_call is None and ("```" in content or (len(response_message) == 0 and content.strip().startswith("{"))):
+                if tools_call is None and ("```" in content or "<|begin_of_box|>" in content or (len(response_message) == 0 and content.strip().startswith("{"))):
                     tool_call_flag = True
                 
                 if tool_call_flag and tools_call is None:
@@ -364,7 +379,7 @@ class Robot(ABC):
                     clean_response_concat = remove_think_tags(response_message_concat)
                     
                     # 检查 clean_response_concat 是否包含可能触发工具调用的关键字
-                    if "```" in clean_response_concat:
+                    if "```" in clean_response_concat or "<|begin_of_box|>" in clean_response_concat:
                         tool_call_flag = True
                         # 将之前错误识别为文本的部分移到 content_arguments
                         content_arguments = clean_response_concat[start:]
@@ -378,7 +393,7 @@ class Robot(ABC):
                         segment_text = clean_response_concat[start:index_segment + 1]
                         
                         # 再次检查 segment_text 是否包含工具调用标记
-                        if "```" in segment_text:
+                        if "```" in segment_text or "<|begin_of_box|>" in segment_text:
                             tool_call_flag = True
                             content_arguments = segment_text
                             continue
@@ -395,7 +410,7 @@ class Robot(ABC):
             if start < len(clean_response_concat):
                 segment_text = clean_response_concat[start:]
                 # 确保最后一部分也不是工具调用
-                if "```" not in segment_text:
+                if "```" not in segment_text and "<|begin_of_box|>" not in segment_text:
                     future = self.executor.submit(self.speak_and_play, segment_text)
                     self.tts_queue.put(future)
         else:
@@ -439,7 +454,7 @@ class Robot(ABC):
                                                        "type": 'function', "index": 0}]))
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.result))
                 # 递归调用以处理后续回复
-                sub_response = self.chat_tool(query)
+                sub_response = self.chat_tool(query, depth=depth + 1)
                 if sub_response:
                     response_message.extend(sub_response)
             elif result.action == Action.ADDSYSTEM:
@@ -455,7 +470,7 @@ class Robot(ABC):
                 self.dialogue.put(Message(role="tool", tool_call_id=function_id, content=result.response))
                 self.dialogue.put(Message(**result.result))
                 self.dialogue.put(Message(role="user", content="ok"))
-                sub_response = self.chat_tool(query)
+                sub_response = self.chat_tool(query, depth=depth + 1)
                 if sub_response:
                     response_message.extend(sub_response)
             else:
@@ -488,7 +503,7 @@ class Robot(ABC):
                 logger.debug("进入普通对话模式 (llm.response)")
                 try:
                     start_time = time.time()  # 记录开始时间
-                    llm_responses = self.llm.response(self.dialogue.get_llm_dialogue())
+                    llm_responses = self.llm.response(self.dialogue.get_llm_dialogue(max_history=self.max_history))
                 except Exception as e:
                     self.chat_lock = False
                     logger.error(f"LLM 处理出错 {query}: {e}", exc_info=True)

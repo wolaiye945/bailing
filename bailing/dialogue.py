@@ -30,7 +30,7 @@ class Dialogue:
     def put(self, message: Message):
         self.dialogue.append(message)
 
-    def get_llm_dialogue(self) -> List[Dict[str, str]]:
+    def get_llm_dialogue(self, max_history: int = None) -> List[Dict[str, str]]:
         dialogue = []
         for m in self.dialogue:
             if m.tool_calls is not None:
@@ -39,6 +39,19 @@ class Dialogue:
                 dialogue.append({"role": m.role, "tool_call_id": m.tool_call_id, "content": m.content})
             else:
                 dialogue.append({"role": m.role, "content": m.content})
+        
+        if max_history and len(dialogue) > max_history:
+            # 保持系统提示词（通常是第一个消息）
+            system_message = None
+            if dialogue and dialogue[0]["role"] == "system":
+                system_message = dialogue[0]
+                remaining_dialogue = dialogue[1:]
+                # 取最后的 max_history - 1 条消息
+                truncated = remaining_dialogue[-(max_history - 1):]
+                return [system_message] + truncated
+            else:
+                return dialogue[-max_history:]
+                
         return dialogue
 
     def dump_dialogue(self):

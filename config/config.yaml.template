@@ -42,10 +42,18 @@ LLM:
     model_name: your-model-name
     url: your-api-url
     api_key: your-api-key
+    temperature: 0.1
+    max_tokens: 1024
+    top_p: 0.7
+    presence_penalty: 0.2
+    frequency_penalty: 0.3
   OllamaLLM:
     model_name: your-model-name
     url: your-api-url
     api_key: your-api-key
+    temperature: 0.1
+    max_tokens: 1024
+    top_p: 0.7
 
 TTS:
   MacTTS:
@@ -89,7 +97,9 @@ Memory:
   model_name: deepseek-chat
   url: https://api.deepseek.com
   api_key: null
+  max_history: 15 # 限制发送给大模型的对话历史轮数，减少延迟
 
 TaskManager:
+  enabled: true
   functions_call_name: plugins/function_calls_config.json
   aigc_manus_enabled: false

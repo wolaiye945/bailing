@@ -48,8 +48,20 @@ def auto_import_modules(package_name, skip_modules=None):
 
 class TaskManager:
     def __init__(self, config, result_queue: queue.Queue):
+        if config is None:
+            config = {}
+        self.enabled = config.get("enabled", True)
         aigc_manus_enabled = config.get("aigc_manus_enabled", False)
         
+        # 如果未启用，则不导入模块也不加载函数
+        if not self.enabled:
+            self.functions = []
+            self.task_queue = queue.Queue()
+            self.task_executor = ThreadPoolExecutor(max_workers=1)
+            self.result_queue = result_queue
+            logger.info("TaskManager 已禁用，不加载任何功能")
+            return
+
         # 根据配置决定要跳过的模块
         skip_list = []
         if not aigc_manus_enabled:
@@ -67,9 +79,13 @@ class TaskManager:
         self.result_queue = result_queue
 
     def get_functions(self):
+        if not self.enabled:
+            return []
         return self.functions
 
     def process_task(self):
+        if not self.enabled:
+            return
         def task_thread():
             while True:
                 try:
@@ -111,6 +127,9 @@ class TaskManager:
             return f"调用函数 '{func_name}' 时出错：{str(e)}"
 
     def tool_call(self, func_name, func_args) -> ActionResponse:
+        if not self.enabled:
+            return ActionResponse(action=Action.NOTFOUND, result="Function calling is disabled", response=None)
+            
         if func_name not in function_registry:
             return ActionResponse(action=Action.NOTFOUND, result="没有找到相应函数", response=None)
         

@@ -18,6 +18,11 @@ class OpenAILLM(LLM):
         self.model_name = config.get("model_name")
         self.api_key = config.get("api_key")
         self.base_url = config.get("url")
+        self.temperature = config.get("temperature", 0.7)
+        self.max_tokens = config.get("max_tokens", 1024)
+        self.top_p = config.get("top_p", 1.0)
+        self.presence_penalty = config.get("presence_penalty", 0.0)
+        self.frequency_penalty = config.get("frequency_penalty", 0.0)
         self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
 
     def response(self, dialogue):
@@ -25,26 +30,38 @@ class OpenAILLM(LLM):
             responses = self.client.chat.completions.create(  #) ChatCompletion.create(
                 model=self.model_name,
                 messages=dialogue,
-                stream=True
+                stream=True,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                top_p=self.top_p,
+                presence_penalty=self.presence_penalty,
+                frequency_penalty=self.frequency_penalty
             )
             for chunk in responses:
-                yield chunk.choices[0].delta.content
-                #yield chunk.choices[0].delta.get("content", "")
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
         except Exception as e:
             logger.error(f"Error in response generation: {e}")
 
     def response_call(self, dialogue, functions_call):
         try:
-            responses = self.client.chat.completions.create(  #) ChatCompletion.create(
-                model=self.model_name,
-                messages=dialogue,
-                stream=True,
-                tools=functions_call
-            )
-            #print(responses)
+            params = {
+                "model": self.model_name,
+                "messages": dialogue,
+                "stream": True,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+                "presence_penalty": self.presence_penalty,
+                "frequency_penalty": self.frequency_penalty
+            }
+            if functions_call:
+                params["tools"] = functions_call
+                
+            responses = self.client.chat.completions.create(**params)
             for chunk in responses:
-                yield chunk.choices[0].delta.content, chunk.choices[0].delta.tool_calls
-                #yield chunk.choices[0].delta.get("content", "")
+                if chunk.choices:
+                    yield chunk.choices[0].delta.content, getattr(chunk.choices[0].delta, "tool_calls", None)
         except Exception as e:
             logger.error(f"Error in response generation: {e}")
 
@@ -53,12 +70,20 @@ class OllamaLLM(LLM):
     def __init__(self, config):
         self.model_name = config.get("model_name", "qwen2.5")
         self.base_url = config.get("url", "http://localhost:11434/api/chat")
+        self.temperature = config.get("temperature", 0.7)
+        self.max_tokens = config.get("max_tokens", 1024)
+        self.top_p = config.get("top_p", 1.0)
 
     def response(self, dialogue):
         payload = {
             "model": self.model_name,
             "messages": dialogue,
-            "stream": True
+            "stream": True,
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+                "top_p": self.top_p
+            }
         }
         try:
             resp = requests.post(self.base_url, json=payload, stream=True)
@@ -82,8 +107,15 @@ class OllamaLLM(LLM):
             "model": self.model_name,
             "messages": dialogue,
             "stream": True,
-            "tools": tools
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+                "top_p": self.top_p
+            }
         }
+        if tools:
+            payload["tools"] = tools
+            
         try:
             resp = requests.post(self.base_url, json=payload, stream=True)
             resp.raise_for_status()
