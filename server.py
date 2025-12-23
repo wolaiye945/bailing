@@ -57,26 +57,36 @@ port = server_config.get("port", 8000)
 # 安全配置
 security_config = config.get("Security", {})
 SECURITY_ENABLED = security_config.get("enabled", False)
-AUTH_USERNAME = security_config.get("username", "admin")
-AUTH_PASSWORD = security_config.get("password", "bailing123")
+# 将用户列表转换为字典，方便查找
+USERS_CONFIG = {u["username"]: u for u in security_config.get("users", [])}
+# 保留旧配置的兼容性，如果没有 users 列表则使用旧的单用户配置
+if not USERS_CONFIG and "username" in security_config:
+    USERS_CONFIG[security_config["username"]] = {
+        "username": security_config["username"],
+        "password": security_config.get("password", "bailing123"),
+        "role": "user"
+    }
+
 SECRET_KEY = security_config.get("secret_key", "bailing_secret_key_change_me")
 
 
-TIMEOUT = 600  # 60 秒不活跃断开
+TIMEOUT = 600  # 600 秒不活跃断开
+# active_robots: Dict[connection_id, [robot_instance, timestamp, user_info]]
 active_robots: Dict[str, list] = {}
 
 async def cleanup_task():
     while True:
         now = time.time()
-        for uid, (robot_instance, ts) in list(active_robots.items()):
+        for conn_id, robot_data in list(active_robots.items()):
+            robot_instance, ts, _ = robot_data
             if now - ts > TIMEOUT:
                 try:
                     robot_instance.recorder.stop_recording()
                     robot_instance.shutdown()
-                    logger.info(f"{uid} 对应的robot已释放")
+                    logger.info(f"连接 {conn_id} 对应的robot因超时已释放")
                 except Exception as e:
-                    logger.info(f"{uid} 对应的robot释放 出错: {e}")
-                active_robots.pop(uid, None)
+                    logger.info(f"连接 {conn_id} 对应的robot释放出错: {e}")
+                active_robots.pop(conn_id, None)
         await asyncio.sleep(10)
 
 @asynccontextmanager
@@ -100,11 +110,11 @@ app.add_middleware(
 # 身份验证辅助函数
 async def get_current_user(request: Request):
     if not SECURITY_ENABLED:
-        return "admin"
-    user = request.session.get("user")
-    if not user:
+        return {"username": "admin", "role": "admin"}
+    user_data = request.session.get("user")
+    if not user_data:
         return None
-    return user
+    return user_data
 
 # 登录相关路由
 @app.get("/login")
@@ -113,9 +123,14 @@ async def login_page():
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
-        request.session["user"] = username
-        return JSONResponse({"status": "ok"})
+    user_config = USERS_CONFIG.get(username)
+    if user_config and user_config["password"] == password:
+        user_data = {
+            "username": username,
+            "role": user_config.get("role", "user")
+        }
+        request.session["user"] = user_data
+        return JSONResponse({"status": "ok", "user": user_data})
     return JSONResponse({"status": "error", "message": "Invalid credentials"}, status_code=401)
 
 @app.get("/logout")
@@ -138,7 +153,7 @@ async def auth_middleware(request: Request, call_next):
     user = request.session.get("user")
     if not user:
         # 如果是 API 请求，返回 401
-        if path.startswith("/temp_files"):
+        if path.startswith("/temp_files") or path.startswith("/admin/"):
             return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
         # 如果是页面请求，重定向到登录页
         return RedirectResponse(url="/login")
@@ -151,38 +166,93 @@ if SECURITY_ENABLED:
 
 
 
+@app.get("/api/me")
+async def get_me(user: dict = Depends(get_current_user)):
+    return user
+
 @app.get("/temp_files")
-async def get_temp_files():
+async def get_temp_files(user: dict = Depends(get_current_user)):
     tmp_dir = "tmp"
     if not os.path.exists(tmp_dir):
         return {}
     
+    is_admin = user.get("role") == "admin"
+    current_username = user.get("username")
+    
     result = {}
-    for date_dir in sorted(os.listdir(tmp_dir), reverse=True):
-        date_path = os.path.join(tmp_dir, date_dir)
-        if os.path.isdir(date_path) and re.match(r"\d{4}-\d{2}-\d{2}", date_dir):
-            files = []
-            for f in os.listdir(date_path):
-                f_path = os.path.join(date_path, f)
-                if os.path.isfile(f_path):
-                    files.append({
-                        "name": f,
-                        "size": os.path.getsize(f_path),
-                        "ctime": os.path.getctime(f_path)
-                    })
-            if files:
-                result[date_dir] = sorted(files, key=lambda x: x["ctime"], reverse=True)
-    return result
+
+    def process_date_dir(d_path, d_name, user_prefix=""):
+        if not os.path.isdir(d_path) or not re.match(r"\d{4}-\d{2}-\d{2}", d_name):
+            return
+        
+        files = []
+        for f in os.listdir(d_path):
+            f_path = os.path.join(d_path, f)
+            if os.path.isfile(f_path):
+                # 记录相对路径，方便后续操作
+                rel_path = os.path.join(user_prefix, d_name, f) if user_prefix else os.path.join(d_name, f)
+                files.append({
+                    "name": f,
+                    "rel_path": rel_path.replace("\\", "/"),
+                    "size": os.path.getsize(f_path),
+                    "ctime": os.path.getctime(f_path),
+                    "username": user_prefix or "default"
+                })
+        
+        if files:
+            if d_name not in result:
+                result[d_name] = []
+            result[d_name].extend(files)
+
+    # 遍历 tmp 目录
+    for entry in os.listdir(tmp_dir):
+        entry_path = os.path.join(tmp_dir, entry)
+        if not os.path.isdir(entry_path):
+            continue
+            
+        if re.match(r"\d{4}-\d{2}-\d{2}", entry):
+            # 旧结构: tmp/{date}/
+            # 只有管理员可以看到旧结构的全部文件，普通用户看不了（因为没法确定归属）
+            if is_admin:
+                process_date_dir(entry_path, entry)
+        else:
+            # 新结构: tmp/{username}/{date}/
+            username = entry
+            if is_admin or username == current_username:
+                for date_dir in os.listdir(entry_path):
+                    date_path = os.path.join(entry_path, date_dir)
+                    process_date_dir(date_path, date_dir, user_prefix=username)
+
+    # 对每个日期的文件按时间排序
+    for date_key in result:
+        result[date_key] = sorted(result[date_key], key=lambda x: x["ctime"], reverse=True)
+        
+    # 按日期倒序排列
+    return dict(sorted(result.items(), key=lambda x: x[0], reverse=True))
 
 @app.delete("/temp_files")
-async def delete_temp_files(files: List[str] = Query(...)):
+async def delete_temp_files(files: List[str] = Query(...), user: dict = Depends(get_current_user)):
     tmp_dir = "tmp"
     deleted_count = 0
+    is_admin = user.get("role") == "admin"
+    current_username = user.get("username")
+
     for f_rel_path in files:
-        # 简单安全检查，防止路径穿越
+        # 安全检查：防止路径穿越
         if ".." in f_rel_path or f_rel_path.startswith("/") or f_rel_path.startswith("\\"):
             continue
             
+        # 安全检查：非管理员只能删除自己的文件
+        # 新结构下，相对路径应该是 {username}/{date}/file.wav
+        parts = f_rel_path.replace("\\", "/").split("/")
+        if len(parts) >= 3:
+            file_username = parts[0]
+            if not is_admin and file_username != current_username:
+                continue
+        elif not is_admin:
+            # 旧结构文件 (date/file.wav)，非管理员禁止删除
+            continue
+
         full_path = os.path.join(tmp_dir, f_rel_path)
         if os.path.exists(full_path) and os.path.isfile(full_path):
             try:
@@ -194,7 +264,11 @@ async def delete_temp_files(files: List[str] = Query(...)):
     return {"status": "ok", "deleted_count": deleted_count}
 
 @app.delete("/temp_files/date/{date_str}")
-async def delete_date_files(date_str: str):
+async def delete_date_files(date_str: str, user: dict = Depends(get_current_user)):
+    # 只有管理员可以删除整个日期目录
+    if user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Permission denied"}, status_code=403)
+
     tmp_dir = "tmp"
     date_path = os.path.join(tmp_dir, date_str)
     if os.path.exists(date_path) and os.path.isdir(date_path):
@@ -206,34 +280,79 @@ async def delete_date_files(date_str: str):
             return {"status": "error", "message": str(e)}
     return {"status": "not_found"}
 
+# 管理员专属 API
+@app.get("/admin/active_connections")
+async def get_active_connections(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Permission denied"}, status_code=403)
+    
+    connections = []
+    for conn_id, robot_data in active_robots.items():
+        _, ts, user_info = robot_data
+        connections.append({
+            "connection_id": conn_id,
+            "user": user_info,
+            "active_since": ts,
+            "idle_seconds": int(time.time() - ts)
+        })
+    return connections
+
+@app.post("/admin/disconnect/{conn_id}")
+async def disconnect_connection(conn_id: str, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        return JSONResponse({"status": "error", "message": "Permission denied"}, status_code=403)
+    
+    if conn_id in active_robots:
+        try:
+            robot_instance, _, _ = active_robots[conn_id]
+            robot_instance.shutdown()
+            active_robots.pop(conn_id, None)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    return {"status": "not_found"}
+
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...)):
+async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...), connection_id: str = Query(None)):
     # 检查身份验证
     if SECURITY_ENABLED:
-        user = websocket.session.get("user")
-        if not user:
+        session_user = websocket.session.get("user")
+        if not session_user:
             logger.warning(f"WebSocket 拒绝未授权访问: user_id={user_id}")
             await websocket.close(code=1008) # Policy Violation
             return
+        
+        # 确保 user_info 是字典且包含必要字段
+        if isinstance(session_user, dict):
+            user_info = session_user
+        else:
+            # 如果 session 中存的是字符串（用户名），则包装成字典
+            user_info = {"username": str(session_user), "role": "user"}
+    else:
+        user_info = {"username": user_id, "role": "admin" if user_id == "admin" else "user"}
+    
+    # 如果没有提供 connection_id，生成一个
+    if not connection_id:
+        connection_id = f"{user_id}_{int(time.time()*1000)}"
 
     await websocket.accept()
     loop = asyncio.get_event_loop()
-    logger.info(f"WebSocket连接已建立: user_id={user_id}")
+    logger.info(f"WebSocket连接已建立: user_id={user_id}, conn_id={connection_id}")
     
-    # 如果已存在该用户的 robot，先关闭旧的
-    if user_id in active_robots:
+    # 如果已存在该连接的 robot，先关闭旧的 (通常在刷新页面时发生)
+    if connection_id in active_robots:
         try:
-            old_robot, _ = active_robots[user_id]
+            old_robot, _, _ = active_robots[connection_id]
             old_robot.shutdown()
-            logger.info(f"清理旧的 robot 实例: user_id={user_id}")
+            logger.info(f"清理旧的 robot 实例: conn_id={connection_id}")
         except Exception as e:
             logger.error(f"清理旧 robot 实例出错: {e}")
-        active_robots.pop(user_id, None)
+        active_robots.pop(connection_id, None)
 
     # 创建新的 robot 实例
-    robot_instance = robot.Robot(config_path, websocket, loop)
-    active_robots[user_id] = [robot_instance, time.time()]
-    logger.info(f"创建新 Robot 实例: user_id={user_id}, robot_id={id(robot_instance)}")
+    robot_instance = robot.Robot(config_path, websocket, loop, user_info)
+    active_robots[connection_id] = [robot_instance, time.time(), user_info]
+    logger.info(f"创建新 Robot 实例: user_id={user_id}, conn_id={connection_id}, robot_id={id(robot_instance)}")
     
     # 启动 robot 运行线程
     robot_thread = threading.Thread(target=robot_instance.run, daemon=True)
@@ -241,16 +360,16 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...)):
 
     try:
         while True:
-            # 检查当前 robot 是否仍是该用户的活跃实例
-            if active_robots.get(user_id) and active_robots[user_id][0] is not robot_instance:
-                logger.info(f"检测到新的 Robot 实例已接管，退出旧连接循环: user_id={user_id}, old_robot_id={id(robot_instance)}")
+            # 检查当前 robot 是否仍是该连接的活跃实例
+            if active_robots.get(connection_id) and active_robots[connection_id][0] is not robot_instance:
+                logger.info(f"检测到新的 Robot 实例已接管，退出旧连接循环: conn_id={connection_id}")
                 break
 
             # 使用 receive() 并显式处理断开连接
             msg = await websocket.receive()
             
             if msg["type"] == "websocket.disconnect":
-                logger.info(f"收到断开连接信号: user_id={user_id}")
+                logger.info(f"收到断开连接信号: conn_id={connection_id}")
                 break
 
             if "bytes" in msg:
@@ -270,21 +389,22 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...)):
                     logger.error(f"无法解析 JSON 文本消息: {msg['text']}")
             
             # 更新活跃时间
-            active_robots[user_id][1] = time.time()
+            if connection_id in active_robots:
+                active_robots[connection_id][1] = time.time()
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket 断开连接: user_id={user_id}")
+        logger.info(f"WebSocket 断开连接: conn_id={connection_id}")
     except Exception as e:
-        logger.error(f"WebSocket 错误 (user_id={user_id}): {e}")
+        logger.error(f"WebSocket 错误 (conn_id={connection_id}): {e}")
     finally:
         # 彻底清理资源
         try:
             if robot_instance:
                 robot_instance.shutdown()
             # 只有当 active_robots 中的实例还是当前这个时才删除
-            if active_robots.get(user_id) and active_robots[user_id][0] is robot_instance:
-                active_robots.pop(user_id, None)
-            logger.info(f"资源已清理，WebSocket 连接关闭: user_id={user_id}")
+            if active_robots.get(connection_id) and active_robots[connection_id][0] is robot_instance:
+                active_robots.pop(connection_id, None)
+            logger.info(f"资源已清理，WebSocket 连接关闭: conn_id={connection_id}")
         except Exception as e:
             logger.error(f"清理资源时出错: {e}")
 

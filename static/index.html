@@ -734,6 +734,9 @@
             <button id="tempFilesBtn" class="control-btn" style="background: linear-gradient(135deg, rgba(148, 163, 184, 0.3), rgba(100, 116, 139, 0.2)); border: 1px solid rgba(148, 163, 184, 0.5);">
                 <i class="fas fa-folder-open"></i> 临时文件
             </button>
+            <button id="adminBtn" class="control-btn" style="display: none; background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(124, 58, 237, 0.2)); border: 1px solid rgba(168, 85, 247, 0.5);">
+                <i class="fas fa-user-shield"></i> 管理面板
+            </button>
         </div>
 
     </div>
@@ -784,6 +787,29 @@
         </div>
     </div>
 
+    <!-- 管理员控制面板模态框 -->
+    <div id="adminPanelModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; backdrop-filter: blur(5px);">
+        <div style="max-width: 900px; margin: 50px auto; background: var(--bg-light); border-radius: 20px; border: 1px solid #a855f7; padding: 30px; height: 80vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; color: #a855f7;"><i class="fas fa-user-shield"></i> 系统管理面板</h2>
+                <button id="closeAdminPanelBtn" style="background: none; border: none; color: var(--text-light); font-size: 1.5rem; cursor: pointer;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="adminPanelContent" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                <div style="text-align: center; padding: 50px;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: #a855f7;"></i>
+                    <p>加载活跃连接...</p>
+                </div>
+            </div>
+            <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                <button id="refreshAdminBtn" class="control-btn" style="padding: 10px 20px; min-width: auto; font-size: 0.9rem; background: linear-gradient(135deg, #a855f7, #7c3aed);">
+                    <i class="fas fa-sync"></i> 刷新列表
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- 日志容器 - 默认隐藏 -->
     <div class="log-container" id="logContainer">
         <div class="log-header">
@@ -813,8 +839,20 @@
           return uid;
         }
 
+        function getConnId() {
+          let cid = sessionStorage.getItem("conn_id");
+          if (!cid) {
+            cid = genId();
+            sessionStorage.setItem("conn_id", cid);
+          }
+          return cid;
+        }
+
         const userId = getUserId();
-        console.log("Your user_id is", userId);
+        const connId = getConnId();
+        let currentUser = null;
+        console.log("Your user_id is", userId, "conn_id is", connId);
+
         // DOM元素
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -832,9 +870,31 @@
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
         const selectedCountSpan = document.getElementById('selectedCount');
         const historyLimitInput = document.getElementById('historyLimit');
+        const adminBtn = document.getElementById('adminBtn');
+        const adminPanelModal = document.getElementById('adminPanelModal');
+        const closeAdminPanelBtn = document.getElementById('closeAdminPanelBtn');
+        const adminPanelContent = document.getElementById('adminPanelContent');
+        const refreshAdminBtn = document.getElementById('refreshAdminBtn');
 
         let selectedFiles = new Set();
         let dialogueHistory = []; // 对话历史记录
+
+        // 获取用户信息并更新 UI
+        async function fetchUserInfo() {
+            try {
+                const response = await fetch('/api/me');
+                if (response.ok) {
+                    currentUser = await response.json();
+                    console.log("Logged in as:", currentUser);
+                    if (currentUser.role === 'admin') {
+                        adminBtn.style.display = 'block';
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch user info:", err);
+            }
+        }
+        fetchUserInfo();
 
         // 状态管理
         let websocket = null;
@@ -902,7 +962,7 @@
 
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const currentWebsocket = new WebSocket(`${protocol}//${window.location.host}/ws?user_id=${userId}`);
+                const currentWebsocket = new WebSocket(`${protocol}//${window.location.host}/ws?user_id=${userId}&connection_id=${connId}`);
                 websocket = currentWebsocket;
 
                 websocket.binaryType = 'arraybuffer';
@@ -990,6 +1050,75 @@
             }
         }
 
+        // 管理员面板相关逻辑
+        async function fetchActiveConnections() {
+            if (!currentUser || currentUser.role !== 'admin') return;
+            
+            adminPanelContent.innerHTML = '<div style="text-align: center; padding: 50px;"><i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: #a855f7;"></i><p>加载中...</p></div>';
+            
+            try {
+                const response = await fetch('/admin/active_connections');
+                if (response.ok) {
+                    const connections = await response.json();
+                    if (connections.length === 0) {
+                        adminPanelContent.innerHTML = '<div style="text-align: center; padding: 50px; color: var(--text-muted);"><i class="fas fa-link-slash" style="font-size: 3rem; margin-bottom: 15px;"></i><p>当前没有活跃连接</p></div>';
+                        return;
+                    }
+                    
+                    let html = '<table style="width: 100%; border-collapse: collapse; margin-top: 10px;">';
+                    html += '<tr style="text-align: left; border-bottom: 2px solid rgba(168, 85, 247, 0.3); color: var(--text-muted); font-size: 0.9rem;">';
+                    html += '<th style="padding: 10px;">用户名</th><th style="padding: 10px;">连接ID</th><th style="padding: 10px;">空闲时长</th><th style="padding: 10px;">操作</th></tr>';
+                    
+                    connections.forEach(conn => {
+                        const isCurrent = conn.connection_id === connId;
+                        html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05); ${isCurrent ? 'background: rgba(74, 108, 247, 0.1);' : ''}">`;
+                        html += `<td style="padding: 15px;"><strong>${conn.user.username}</strong> ${conn.user.role === 'admin' ? '<span style="font-size: 0.7rem; background: #a855f7; padding: 2px 5px; border-radius: 4px; color: white; margin-left: 5px;">管理员</span>' : ''}</td>`;
+                        html += `<td style="padding: 15px; font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">${conn.connection_id}</td>`;
+                        html += `<td style="padding: 15px;">${conn.idle_seconds}s</td>`;
+                        html += `<td style="padding: 15px;">
+                            ${isCurrent ? '<span style="color: var(--success); font-size: 0.8rem;">(当前设备)</span>' : 
+                            `<button onclick="disconnectConn('${conn.connection_id}')" style="background: rgba(255, 107, 107, 0.2); border: 1px solid var(--accent); color: var(--accent); padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8rem;">
+                                <i class="fas fa-unlink"></i> 断开
+                            </button>`}
+                        </td>`;
+                        html += '</tr>';
+                    });
+                    html += '</table>';
+                    adminPanelContent.innerHTML = html;
+                } else {
+                    adminPanelContent.innerHTML = `<div style="text-align: center; padding: 50px; color: var(--accent);"><p>获取连接列表失败: ${response.status}</p></div>`;
+                }
+            } catch (err) {
+                adminPanelContent.innerHTML = `<div style="text-align: center; padding: 50px; color: var(--accent);"><p>网络错误: ${err.message}</p></div>`;
+            }
+        }
+
+        window.disconnectConn = async (cid) => {
+            if (!confirm(`确定要强制断开连接 ${cid} 吗？`)) return;
+            try {
+                const response = await fetch(`/admin/disconnect/${cid}`, { method: 'POST' });
+                if (response.ok) {
+                    addLog(`已成功断开连接: ${cid}`);
+                    fetchActiveConnections();
+                } else {
+                    alert("断开连接失败");
+                }
+            } catch (err) {
+                alert("网络错误: " + err.message);
+            }
+        };
+
+        adminBtn.addEventListener('click', () => {
+            adminPanelModal.style.display = 'block';
+            fetchActiveConnections();
+        });
+
+        closeAdminPanelBtn.addEventListener('click', () => {
+            adminPanelModal.style.display = 'none';
+        });
+
+        refreshAdminBtn.addEventListener('click', fetchActiveConnections);
+
         // 临时文件管理逻辑
         let cachedTempFilesData = null;
 
@@ -1023,8 +1152,7 @@
                 const dateId = `date-${date}`;
                 
                 // 检查该日期下是否所有文件都已选中
-                const dateFiles = files.map(f => `${date}/${f.name}`);
-                const allSelected = dateFiles.length > 0 && dateFiles.every(f => selectedFiles.has(f));
+                const allSelected = files.length > 0 && files.every(f => selectedFiles.has(f.rel_path));
 
                 html += `
                     <div style="margin-bottom: 20px;">
@@ -1033,21 +1161,27 @@
                                 <input type="checkbox" id="check-${dateId}" onchange="toggleDateSelection('${date}', this.checked)" style="cursor: pointer;" ${allSelected ? 'checked' : ''}>
                                 <h3 style="margin: 0; font-size: 1.1rem; color: var(--primary); cursor: pointer;" onclick="document.getElementById('check-${dateId}').click()">${date}</h3>
                             </div>
+                            ${currentUser && currentUser.role === 'admin' ? `
                             <button onclick="deleteDateFiles('${date}')" style="background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.9rem;">
                                 <i class="fas fa-trash"></i> 删除该日全部
-                            </button>
+                            </button>` : ''}
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">
                 `;
 
                 files.forEach(file => {
-                    const relPath = `${date}/${file.name}`;
+                    const relPath = file.rel_path;
                     const isSelected = selectedFiles.has(relPath);
                     const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                    const isUserFile = file.username && file.username !== 'default';
+                    
                     html += `
                         <div onclick="toggleFileSelection('${relPath}')" style="padding: 10px; background: rgba(30, 41, 59, 0.5); border: 1px solid ${isSelected ? 'var(--primary)' : 'var(--glass-border)'}; border-radius: 8px; cursor: pointer; transition: var(--transition); position: relative;">
                             <div style="font-size: 0.85rem; word-break: break-all; margin-bottom: 5px;">${file.name}</div>
-                            <div style="font-size: 0.75rem; color: var(--text-muted);">${sizeMB} MB</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">${sizeMB} MB</div>
+                                ${currentUser && currentUser.role === 'admin' && isUserFile ? `<div style="font-size: 0.65rem; background: rgba(168, 85, 247, 0.2); color: #a855f7; padding: 1px 4px; border-radius: 3px;">${file.username}</div>` : ''}
+                            </div>
                             ${isSelected ? '<div style="position: absolute; top: 5px; right: 5px; color: var(--primary);"><i class="fas fa-check-circle"></i></div>' : ''}
                         </div>
                     `;
@@ -1066,7 +1200,7 @@
             if (!cachedTempFilesData || !cachedTempFilesData[date]) return;
             const files = cachedTempFilesData[date];
             files.forEach(file => {
-                const relPath = `${date}/${file.name}`;
+                const relPath = file.rel_path;
                 if (isChecked) {
                     selectedFiles.add(relPath);
                 } else {

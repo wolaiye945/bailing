@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 # 将项目根目录添加到 python 路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from server import app, AUTH_USERNAME, AUTH_PASSWORD, SECURITY_ENABLED
+from server import app, USERS_CONFIG, SECURITY_ENABLED
 
 client = TestClient(app)
 
@@ -14,18 +14,22 @@ def test_login_flow():
     if not SECURITY_ENABLED:
         pytest.skip("Security is disabled in config")
 
+    # 获取第一个可用用户进行测试
+    test_username = list(USERS_CONFIG.keys())[0]
+    test_password = USERS_CONFIG[test_username]["password"]
+
     # 1. 访问首页，应该被重定向到 /login
     response = client.get("/", follow_redirects=False)
     assert response.status_code == 307
     assert response.headers["location"] == "/login"
 
     # 2. 尝试错误密码登录
-    response = client.post("/login", data={"username": "admin", "password": "wrong_password"})
+    response = client.post("/login", data={"username": test_username, "password": "wrong_password"})
     assert response.status_code == 401
     assert response.json()["status"] == "error"
 
     # 3. 使用正确密码登录
-    response = client.post("/login", data={"username": AUTH_USERNAME, "password": AUTH_PASSWORD})
+    response = client.post("/login", data={"username": test_username, "password": test_password})
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     

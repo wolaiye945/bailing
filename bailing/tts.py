@@ -24,8 +24,29 @@ class AbstractTTS(ABC):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def to_tts(self, text):
+    def to_tts(self, text, username=None):
         pass
+
+    def _generate_filename(self, output_file, extension=".wav", username=None):
+        # 确保 tmp 目录存在
+        tmp_dir = output_file if output_file else "tmp"
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+        
+        # 使用用户特定的子目录（如果提供了用户名）
+        base_dir = tmp_dir
+        if username:
+            base_dir = os.path.join(tmp_dir, username)
+            if not os.path.exists(base_dir):
+                os.makedirs(base_dir)
+
+        # 使用日期子目录
+        date_str = time.strftime("%Y-%m-%d")
+        date_dir = os.path.join(base_dir, date_str)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+            
+        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
 
 
 class GTTS(AbstractTTS):
@@ -33,27 +54,13 @@ class GTTS(AbstractTTS):
         self.output_file = config.get("output_file")
         self.lang = config.get("lang")
 
-    def _generate_filename(self, extension=".aiff"):
-        # 确保 tmp 目录存在
-        tmp_dir = self.output_file if self.output_file else "tmp"
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
-        
-        # 使用日期子目录
-        date_str = time.strftime("%Y-%m-%d")
-        date_dir = os.path.join(tmp_dir, date_str)
-        if not os.path.exists(date_dir):
-            os.makedirs(date_dir)
-            
-        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
-
     def _log_execution_time(self, start_time):
         end_time = time.time()
         execution_time = end_time - start_time
         logger.debug(f"执行时间: {execution_time:.2f} 秒")
 
-    def to_tts(self, text):
-        tmpfile = self._generate_filename(".aiff")
+    def to_tts(self, text, username=None):
+        tmpfile = self._generate_filename(self.output_file, ".aiff", username)
         try:
             start_time = time.time()
             tts = gTTS(text=text, lang=self.lang)
@@ -76,28 +83,14 @@ class MacTTS(AbstractTTS):
         self.voice = config.get("voice")
         self.output_file = config.get("output_file")
 
-    def _generate_filename(self, extension=".aiff"):
-        # 确保 tmp 目录存在
-        tmp_dir = self.output_file if self.output_file else "tmp"
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
-        
-        # 使用日期子目录
-        date_str = time.strftime("%Y-%m-%d")
-        date_dir = os.path.join(tmp_dir, date_str)
-        if not os.path.exists(date_dir):
-            os.makedirs(date_dir)
-            
-        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
-
     def _log_execution_time(self, start_time):
         end_time = time.time()
         execution_time = end_time - start_time
         logger.debug(f"执行时间: {execution_time:.2f} 秒")
 
-    def to_tts(self, phrase):
+    def to_tts(self, phrase, username=None):
         logger.debug(f"正在转换的tts：{phrase}")
-        tmpfile = self._generate_filename(".aiff")
+        tmpfile = self._generate_filename(self.output_file, ".aiff", username)
         try:
             start_time = time.time()
             res = subprocess.run(
@@ -121,20 +114,6 @@ class EdgeTTS(AbstractTTS):
         self.output_file = config.get("output_file", "tmp/")
         self.voice = config.get("voice")
 
-    def _generate_filename(self, extension=".wav"):
-        # 确保 tmp 目录存在
-        tmp_dir = self.output_file if self.output_file else "tmp"
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
-        
-        # 使用日期子目录
-        date_str = time.strftime("%Y-%m-%d")
-        date_dir = os.path.join(tmp_dir, date_str)
-        if not os.path.exists(date_dir):
-            os.makedirs(date_dir)
-            
-        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
-
     def _log_execution_time(self, start_time):
         end_time = time.time()
         execution_time = end_time - start_time
@@ -144,8 +123,8 @@ class EdgeTTS(AbstractTTS):
         communicate = edge_tts.Communicate(text, voice=self.voice)  # Use your preferred voice
         await communicate.save(output_file)
 
-    def to_tts(self, text):
-        tmpfile = self._generate_filename(".wav")
+    def to_tts(self, text, username=None):
+        tmpfile = self._generate_filename(self.output_file, ".wav", username)
         start_time = time.time()
         try:
             asyncio.run(self.text_to_speak(text, tmpfile))
@@ -163,27 +142,13 @@ class CHATTTS(AbstractTTS):
         self.chat.load(compile=False)  # Set to True for better performance
         self.rand_spk = self.chat.sample_random_speaker()
 
-    def _generate_filename(self, extension=".wav"):
-        # 确保 tmp 目录存在
-        tmp_dir = self.output_file if self.output_file else "tmp"
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
-        
-        # 使用日期子目录
-        date_str = time.strftime("%Y-%m-%d")
-        date_dir = os.path.join(tmp_dir, date_str)
-        if not os.path.exists(date_dir):
-            os.makedirs(date_dir)
-            
-        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
-
     def _log_execution_time(self, start_time):
         end_time = time.time()
         execution_time = end_time - start_time
         logger.debug(f"Execution Time: {execution_time:.2f} seconds")
 
-    def to_tts(self, text):
-        tmpfile = self._generate_filename(".wav")
+    def to_tts(self, text, username=None):
+        tmpfile = self._generate_filename(self.output_file, ".wav", username)
         start_time = time.time()
         try:
             params_infer_code = ChatTTS.Chat.InferCodeParams(
@@ -301,24 +266,11 @@ class KOKOROTTS(AbstractTTS):
             device=self.device
         )
 
-    def _generate_filename(self, extension=".wav"):
-        # 确保 tmp 目录存在
-        tmp_dir = self.output_dir
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
-        
-        # 使用日期子目录
-        date_str = time.strftime("%Y-%m-%d")
-        date_dir = os.path.join(tmp_dir, date_str)
-        if not os.path.exists(date_dir):
-            os.makedirs(date_dir)
-            
-        return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
-
     def _log_execution_time(self, start_time):
         end_time = time.time()
         execution_time = end_time - start_time
         logger.debug(f"Execution Time: {execution_time:.2f} seconds")
+
     @staticmethod
     def _speed_callable(len_ps: int) -> float:
         """
@@ -331,10 +283,10 @@ class KOKOROTTS(AbstractTTS):
             speed = 1.0 - (len_ps - 83) / 500.0
         return speed * 1.1
 
-    def to_tts(self, text):
+    def to_tts(self, text, username=None):
         logger.debug(f"KOKOROTTS to_tts: {text}")
         try:
-            output_file = self._generate_filename(".wav")
+            output_file = self._generate_filename(self.output_dir, ".wav", username)
             generator = self.pipeline(
                 text, voice=self.voice,
                 speed=1, split_pattern=r'\n+'

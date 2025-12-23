@@ -13,9 +13,14 @@ Server:
 
 Security:
   enabled: true
-  username: admin
-  password: your-password
-  secret_key: your-secret-key-change-me
+  secret_key: bailing_secret_key_change_me
+  users:
+    - username: admin
+      password: your_admin_password
+      role: admin
+    - username: user1
+      password: your_user_password
+      role: user
 
 interrupt: true
 # 是否开启工具调用
