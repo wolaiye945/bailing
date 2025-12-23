@@ -121,6 +121,7 @@ class Robot(ABC):
 
         # 打断相关配置
         self.INTERRUPT = config["interrupt"]
+        self.echo_config = config.get("echo_cancellation", {"enabled": False})
         self.silence_time_ms = int((1000 / 1000) * (16000 / 512))  # ms
 
         self.callback = None
@@ -240,6 +241,13 @@ class Robot(ABC):
         except queue.Empty:
             return
             
+        # 动态调整 VAD 阈值以抑制回声
+        if self.echo_config.get("enabled"):
+            if self.player.get_playing_status():
+                self.vad.set_threshold(self.echo_config.get("threshold_playing", 0.95))
+            else:
+                self.vad.set_threshold(self.vad.original_threshold)
+
         # 识别到vad开始
         if self.vad_start:
             self.speech.append(data)

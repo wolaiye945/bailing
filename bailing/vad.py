@@ -13,8 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 class VAD(ABC):
+    def __init__(self, config):
+        self.original_threshold = config.get("threshold", 0.5)
+
     @abstractmethod
     def is_vad(self, data):
+        pass
+
+    def set_threshold(self, threshold):
         pass
 
     def reset_states(self):
@@ -27,12 +33,24 @@ class SileroVAD(VAD):
         self.model = load_silero_vad()
         self.sampling_rate = config.get("sampling_rate")
         self.threshold = config.get("threshold")
+        self.original_threshold = self.threshold
         self.min_silence_duration_ms = config.get("min_silence_duration_ms")
         self.vad_iterator = VADIterator(self.model,
                             threshold=self.threshold,
                             sampling_rate=self.sampling_rate,
                             min_silence_duration_ms=self.min_silence_duration_ms)
         logger.debug(f"VAD Iterator initialized with model {self.model}")
+
+    def set_threshold(self, threshold):
+        """
+        Dynamically update the VAD threshold.
+        """
+        try:
+            self.threshold = threshold
+            self.vad_iterator.threshold = threshold
+            logger.debug(f"VAD threshold updated to: {threshold}")
+        except Exception as e:
+            logger.error(f"Error updating VAD threshold: {e}")
 
     @staticmethod
     def int2float(sound):
