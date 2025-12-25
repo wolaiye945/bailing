@@ -57,8 +57,15 @@ port = server_config.get("port", 8000)
 # 安全配置
 security_config = config.get("Security", {})
 SECURITY_ENABLED = security_config.get("enabled", False)
+# 支持多用户
+AUTH_USERS = security_config.get("users", [])
+# 兼容旧版本配置
 AUTH_USERNAME = security_config.get("username", "admin")
 AUTH_PASSWORD = security_config.get("password", "bailing123")
+
+if not AUTH_USERS:
+    AUTH_USERS = [{"username": AUTH_USERNAME, "password": AUTH_PASSWORD, "role": "admin"}]
+
 SECRET_KEY = security_config.get("secret_key", "bailing_secret_key_change_me")
 
 
@@ -113,9 +120,13 @@ async def login_page():
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
-        request.session["user"] = username
-        return JSONResponse({"status": "ok"})
+    # 检查用户列表
+    for user in AUTH_USERS:
+        if username == user.get("username") and password == str(user.get("password")):
+            request.session["user"] = username
+            request.session["role"] = user.get("role", "user")
+            return JSONResponse({"status": "ok"})
+            
     return JSONResponse({"status": "error", "message": "Invalid credentials"}, status_code=401)
 
 @app.get("/logout")
