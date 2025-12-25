@@ -60,11 +60,13 @@ SECURITY_ENABLED = security_config.get("enabled", False)
 # 将用户列表转换为字典，方便查找
 USERS_CONFIG = {u["username"]: u for u in security_config.get("users", [])}
 # 保留旧配置的兼容性，如果没有 users 列表则使用旧的单用户配置
-if not USERS_CONFIG and "username" in security_config:
-    USERS_CONFIG[security_config["username"]] = {
-        "username": security_config["username"],
-        "password": security_config.get("password", "bailing123"),
-        "role": "user"
+if not USERS_CONFIG:
+    auth_username = security_config.get("username", "admin")
+    auth_password = security_config.get("password", "bailing123")
+    USERS_CONFIG[auth_username] = {
+        "username": auth_username,
+        "password": auth_password,
+        "role": "admin"
     }
 
 SECRET_KEY = security_config.get("secret_key", "bailing_secret_key_change_me")
@@ -124,12 +126,14 @@ async def login_page():
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
     user_config = USERS_CONFIG.get(username)
-    if user_config and user_config["password"] == password:
+    if user_config and str(user_config["password"]) == str(password):
         user_data = {
             "username": username,
             "role": user_config.get("role", "user")
         }
         request.session["user"] = user_data
+        # 兼容性：同时也存储 role
+        request.session["role"] = user_data["role"]
         return JSONResponse({"status": "ok", "user": user_data})
     return JSONResponse({"status": "error", "message": "Invalid credentials"}, status_code=401)
 
