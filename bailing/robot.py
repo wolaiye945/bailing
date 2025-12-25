@@ -35,30 +35,38 @@ logger = logging.getLogger(__name__)
 
 
 class Robot(ABC):
-    def __init__(self, config_file, websocket = None, loop = None):
+    def __init__(self, config_file, websocket = None, loop = None, user_info = None):
         logger.info(f"Robot 正在从 {config_file} 初始化...")
+        # 确保 user_info 是字典格式
+        if isinstance(user_info, dict):
+            self.user_info = user_info
+        elif isinstance(user_info, str):
+            self.user_info = {"username": user_info, "role": "user"}
+        else:
+            self.user_info = {"username": "default", "role": "user"}
+            
         config = read_config(config_file)
         self.audio_queue = queue.Queue()
 
-        logger.info("初始化 Recorder...")
+        logger.info(f"初始化 Recorder (User: {self.user_info['username']})...")
         self.recorder = recorder.create_instance(
             config["selected_module"]["Recorder"],
             config["Recorder"][config["selected_module"]["Recorder"]]
         )
 
-        logger.info("初始化 ASR...")
+        logger.info(f"初始化 ASR (User: {self.user_info['username']})...")
         self.asr = asr.create_instance(
             config["selected_module"]["ASR"],
             config["ASR"][config["selected_module"]["ASR"]]
         )
 
-        logger.info("初始化 LLM...")
+        logger.info(f"初始化 LLM (User: {self.user_info['username']})...")
         self.llm = llm.create_instance(
             config["selected_module"]["LLM"],
             config["LLM"][config["selected_module"]["LLM"]]
         )
 
-        logger.info("初始化 TTS...")
+        logger.info(f"初始化 TTS (User: {self.user_info['username']})...")
         self.tts = tts.create_instance(
             config["selected_module"]["TTS"],
             config["TTS"][config["selected_module"]["TTS"]]
@@ -94,8 +102,26 @@ class Robot(ABC):
         self.task_manager = TaskManager(config.get("TaskManager"), self.task_queue)
         self.start_task_mode = config.get("StartTaskMode")
 
-        memory_config = config.get("Memory")
+        memory_config = config.get("Memory", {}).copy()
         if memory_config and memory_config.get("enabled", True):
+            # 为不同用户隔离 memory 和对话历史路径
+            if self.user_info['username'] != "default":
+                user_path = self.user_info['username']
+                
+                # 优化对话历史路径
+                orig_history_path = memory_config.get("dialogue_history_path", "tmp/dialogue")
+                memory_config["dialogue_history_path"] = os.path.join(orig_history_path, user_path)
+                
+                # 优化 memory 文件路径
+                orig_memory_file = memory_config.get("memory_file", "tmp/memory.json")
+                memory_dir = os.path.dirname(orig_memory_file)
+                memory_base = os.path.basename(orig_memory_file)
+                memory_config["memory_file"] = os.path.join(memory_dir, user_path, memory_base)
+                
+                # 确保目录存在
+                os.makedirs(os.path.dirname(memory_config["memory_file"]), exist_ok=True)
+                os.makedirs(memory_config["dialogue_history_path"], exist_ok=True)
+
             self.memory = memory.Memory(memory_config)
             self.memory_text = self.memory.get_memory()
         else:
@@ -114,7 +140,7 @@ class Robot(ABC):
 
         self.vad_queue = queue.Queue()
         self.max_history = config.get("Memory", {}).get("max_history", 15)
-        self.dialogue = Dialogue(config["Memory"]["dialogue_history_path"])
+        self.dialogue = Dialogue(memory_config.get("dialogue_history_path", "tmp/dialogue"))
         self.dialogue.put(Message(role="system", content=self.prompt))
 
         self.vad_start = True
@@ -300,8 +326,8 @@ class Robot(ABC):
                     try:
                         if hasattr(self.player, 'send_status'):
                             self.player.send_status("processing")
-                        logger.info("开始 ASR 识别...")
-                        text, tmpfile = self.asr.recognizer(data)
+                        logger.info(f"开始 ASR 识别 (User: {self.user_info['username']})...")
+                        text, tmpfile = self.asr.recognizer(data, username=self.user_info['username'])
                         if text is None or not text.strip():
                             logger.info("ASR 识别结果为空，跳过处理。")
                             if hasattr(self.player, 'send_status'):
@@ -351,9 +377,9 @@ class Robot(ABC):
         if text is None or len(text)<=0:
             logger.info(f"无需tts转换，query为空，{text}")
             return None
-        logger.info(f"开始 TTS 转换: {text}")
+        logger.info(f"开始 TTS 转换 (User: {self.user_info['username']}): {text}")
         try:
-            tts_file = self.tts.to_tts(text)
+            tts_file = self.tts.to_tts(text, username=self.user_info['username'])
         except Exception as e:
             logger.error(f"TTS 转换抛出异常: {e}", exc_info=True)
             return None

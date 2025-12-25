@@ -34,7 +34,7 @@ class ASR(ABC):
             raise
 
     @abstractmethod
-    def recognizer(self, stream_in_audio):
+    def recognizer(self, stream_in_audio, username=None):
         """处理输入音频流并返回识别的文本，子类必须实现"""
         pass
 
@@ -58,15 +58,22 @@ class FunASR(ASR):
                 )
         self.model = FunASR._model_instance
 
-    def recognizer(self, stream_in_audio):
+    def recognizer(self, stream_in_audio, username=None):
         try:
             # 确保输出目录存在
             if not os.path.exists(self.output_dir):
                 os.makedirs(self.output_dir)
             
+            # 使用用户特定的子目录（如果提供了用户名）
+            base_dir = self.output_dir
+            if username:
+                base_dir = os.path.join(self.output_dir, username)
+                if not os.path.exists(base_dir):
+                    os.makedirs(base_dir)
+
             # 使用日期子目录
             date_str = datetime.now().strftime("%Y-%m-%d")
-            date_dir = os.path.join(self.output_dir, date_str)
+            date_dir = os.path.join(base_dir, date_str)
             if not os.path.exists(date_dir):
                 os.makedirs(date_dir)
 
