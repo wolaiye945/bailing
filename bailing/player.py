@@ -6,7 +6,8 @@ import threading
 import wave
 import pyaudio
 import json
-from pydub import  AudioSegment
+import os
+from pydub import AudioSegment
 import pygame
 import sounddevice as sd
 import numpy as np
@@ -31,11 +32,26 @@ class AbstractPlayer(object):
             return audio_file
         tmp_file = audio_file + ".wav"
         try:
-            wav_file = AudioSegment.from_file(audio_file)
-            wav_file.export(tmp_file, format="wav")
-            return tmp_file
+            # 记录转换开始
+            logger.debug(f"正在将 {audio_file} 转换为 wav 格式...")
+            
+            # 检查文件是否存在
+            if not os.path.exists(audio_file):
+                logger.error(f"转换失败：源文件不存在 {audio_file}")
+                return audio_file
+                
+            audio = AudioSegment.from_file(audio_file)
+            audio.export(tmp_file, format="wav")
+            
+            # 验证转换后的文件
+            if os.path.exists(tmp_file) and os.path.getsize(tmp_file) > 0:
+                logger.debug(f"转换成功: {tmp_file} ({os.path.getsize(tmp_file)} bytes)")
+                return tmp_file
+            else:
+                logger.error(f"转换后的文件无效或为空: {tmp_file}")
+                return audio_file
         except Exception as e:
-            logger.error(f"转换音频到 wav 失败: {e}")
+            logger.error(f"转换音频到 wav 失败: {e}", exc_info=True)
             return audio_file
 
     def _playing(self):
@@ -234,29 +250,46 @@ class WebSocketPlayer(AbstractPlayer):
 
     def do_playing(self, audio_file):
         try:
+            if not self.websocket or self.websocket.client_state.value != 1:
+                logger.warning(f"WebSocket 未连接，跳过播放: {audio_file}")
+                return
+
             with open(audio_file, "rb") as f:
                 wav_data = f.read()
-            logger.info(f"websocket 发送音频文件：{audio_file}")
+            
+            if not wav_data:
+                logger.warning(f"音频文件为空: {audio_file}")
+                return
 
-            # 发送前先重置事件，确保我们会等待这次发送的播放完成
+            logger.info(f"WebSocket 准备发送音频文件：{audio_file} ({len(wav_data)} bytes)")
+            
+            # 发送调试状态，确保前端知道后端已经开始动作
+            asyncio.run_coroutine_threadsafe(
+                self.websocket.send_text(json.dumps({
+                    "type": "debug", 
+                    "message": f"后端正在推送音频二进制流: {os.path.basename(audio_file)} ({len(wav_data)} 字节)"
+                })),
+                self.loop
+            )
+            
             self._playback_finished_event.clear()
 
+            # 确保使用 bytes 类型发送
             asyncio.run_coroutine_threadsafe(
                 self.websocket.send_bytes(wav_data),
                 self.loop
             )
 
             # 等待前端返回播放完成信号
-            # 设置较长的超时时间（如 60s），防止前端意外不返回导致后端卡死
             finished = self._playback_finished_event.wait(timeout=60)
             if not finished:
-                logger.warning(f"等待前端播放音频超时: {audio_file}")
+                logger.warning(f"等待前端播放音频超时 (60s): {audio_file}")
             else:
-                logger.debug(f"前端播放音频完成: {audio_file}")
+                logger.debug(f"前端播放音频确认完成: {audio_file}")
 
         except Exception as e:
-            logger.error(f"播放音频失败: {e}")
-            self._playback_finished_event.set() # 出错也要恢复，防止死锁
+            logger.error(f"WebSocketPlayer 播放任务异常: {e}", exc_info=True)
+            self._playback_finished_event.set() 
 
     def interrupt(self):
         """异步发送中断命令"""

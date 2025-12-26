@@ -8,827 +8,605 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
-            --primary: #4a6cf7;
-            --primary-dark: #3b59d6;
-            --accent: #ff6b6b;
-            --success: #1dd1a1;
-            --warning: #feca57;
-            --bg-dark: #0f172a;
-            --bg-light: #1e293b;
-            --text-light: #f1f5f9;
-            --text-muted: #94a3b8;
-            --glass-bg: rgba(30, 41, 59, 0.7);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            --primary: #5271ff;
+            --primary-soft: rgba(82, 113, 255, 0.1);
+            --accent: #ff8c42; /* 温暖的橘色 */
+            --bg-page: #f8faff;
+            --bg-card: rgba(255, 255, 255, 0.8);
+            --text-main: #2d3436;
+            --text-muted: #636e72;
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.05);
+            --transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
         }
 
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         }
 
         body {
-            background: linear-gradient(135deg, #0d0f1e 0%, #1a1e3c 100%);
-            color: var(--text-light);
+            background-color: var(--bg-page);
+            color: var(--text-main);
             min-height: 100vh;
             overflow-x: hidden;
-            position: relative;
+            line-height: 1.6;
         }
 
-        /* 科技感背景 */
-        .tech-bg {
+        /* 背景装饰 */
+        .ambient-bg {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 0;
-            overflow: hidden;
-            background: radial-gradient(circle at center, rgba(74, 108, 247, 0.05) 0%, transparent 80%);
+            z-index: -1;
+            background: 
+                radial-gradient(circle at 10% 20%, rgba(82, 113, 255, 0.03) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(255, 140, 66, 0.03) 0%, transparent 40%);
+            filter: blur(80px);
         }
 
-        .tech-bg::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background:
-                radial-gradient(circle at 20% 30%, rgba(74, 108, 247, 0.1) 0%, transparent 20%),
-                radial-gradient(circle at 80% 70%, rgba(255, 107, 107, 0.1) 0%, transparent 25%),
-                radial-gradient(circle at 40% 80%, rgba(31, 221, 161, 0.1) 0%, transparent 15%);
-            z-index: 1;
-        }
-
-        .grid-line {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image:
-                linear-gradient(rgba(74, 108, 247, 0.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(74, 108, 247, 0.05) 1px, transparent 1px);
-            background-size: 40px 40px;
-            z-index: 0;
-        }
-
-        /* 顶部标题栏 */
+        /* 顶部导航 */
         header {
-            background: rgba(10, 15, 30, 0.8);
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(248, 250, 255, 0.7);
             backdrop-filter: blur(10px);
-            padding: 18px 30px;
-            text-align: center;
-            border-bottom: 1px solid rgba(74, 108, 247, 0.3);
-            position: relative;
-            z-index: 10;
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.03);
         }
 
-        header h1 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            margin: 0;
-            background: linear-gradient(90deg, #4a6cf7, #8a6cf7, #ff6b6b);
+        header .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
-            letter-spacing: 1px;
-            position: relative;
-            display: inline-block;
-            text-shadow: 0 0 10px rgba(74, 108, 247, 0.3);
-        }
-
-        .subtitle {
-            font-size: 1rem;
-            color: var(--text-muted);
-            margin-top: 8px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-        }
-
-        /* 控制面板 */
-        .control-panel {
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 25px;
-            background: rgba(10, 15, 30, 0.6);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(74, 108, 247, 0.2);
-            position: relative;
-            z-index: 5;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-        }
-
-        .status-box {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 15px 20px;
-            background: rgba(15, 23, 42, 0.5);
-            border-radius: 15px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(74, 108, 247, 0.2);
-        }
-
-        .status-info {
-            display: flex;
-            align-items: center;
-        }
-
-        .settings-box {
             display: flex;
             align-items: center;
             gap: 10px;
-            font-size: 0.9rem;
-            color: var(--text-muted);
         }
 
-        .settings-input {
-            width: 50px;
-            background: rgba(30, 41, 59, 0.8);
-            border: 1px solid var(--glass-border);
-            color: var(--text-light);
-            border-radius: 5px;
-            padding: 2px 5px;
-            text-align: center;
-        }
-
-        .status-indicator {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 15px;
-            box-shadow: 0 0 10px currentColor;
-        }
-
-        .status-text {
-            font-size: 1.1rem;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-        }
-
-        .status-indicator.connecting {
-            background: var(--warning);
-            animation: pulse 1.5s infinite;
-        }
-
-        .status-indicator.connected {
-            background: var(--success);
-        }
-
-        .status-indicator.disconnected {
-            background: var(--accent);
-        }
-
-        .status-indicator.processing {
-            background: #a855f7; /* 紫色 */
-            animation: pulse 1s infinite;
-        }
-
-        .status-indicator.thinking {
-            background: #3b82f6; /* 蓝色 */
-            animation: bounce 1s infinite;
-        }
-
-        .status-indicator.responding {
-            background: #10b981; /* 绿色 */
-            animation: pulse 0.5s infinite;
-        }
-
-        .status-indicator.listening {
-            background: #ef4444; /* 红色 */
-            animation: pulse 0.8s infinite;
-        }
-
-        .status-indicator.speaking {
-            background: #f59e0b; /* 橙色 */
-            animation: wave 1s infinite;
-        }
-
-        @keyframes wave {
-            0%, 100% { transform: scaleY(1); }
-            50% { transform: scaleY(1.5); }
-        }
-
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
-
-        .status-indicator.recording {
-            background: var(--primary);
-            animation: pulse 1s infinite;
-        }
-
-        .control-buttons {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-
-        .control-btn {
-            flex: 1;
-            min-width: 150px;
-            padding: 18px 0;
-            border-radius: 15px;
-            background: linear-gradient(135deg, rgba(74, 108, 247, 0.3), rgba(59, 89, 214, 0.2));
-            border: 1px solid rgba(74, 108, 247, 0.5);
-            color: var(--text-light);
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            box-shadow: 0 5px 15px rgba(74, 108, 247, 0.2);
-        }
-
-        .control-btn:hover {
-            background: linear-gradient(135deg, rgba(74, 108, 247, 0.5), rgba(59, 89, 214, 0.4));
-            transform: translateY(-3px);
-            box-shadow: 0 8px 20px rgba(74, 108, 247, 0.4);
-        }
-
-        .control-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
-        .control-btn.stop {
-            background: linear-gradient(135deg, rgba(255, 107, 107, 0.3), rgba(200, 80, 80, 0.2));
-            border: 1px solid rgba(255, 107, 107, 0.5);
-        }
-
-        .control-btn.stop:hover {
-            background: linear-gradient(135deg, rgba(255, 107, 107, 0.5), rgba(200, 80, 80, 0.4));
-            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.4);
-        }
-
-        .control-btn.interrupt {
-            background: linear-gradient(135deg, rgba(254, 202, 87, 0.3), rgba(220, 170, 60, 0.2));
-            border: 1px solid rgba(254, 202, 87, 0.5);
-        }
-
-        .control-btn.interrupt:hover {
-            background: linear-gradient(135deg, rgba(254, 202, 87, 0.5), rgba(220, 170, 60, 0.4));
-            box-shadow: 0 8px 20px rgba(254, 202, 87, 0.4);
-        }
-
-        /* 对话容器 */
-        #dialogue-container {
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 30px;
-            height: calc(100vh - 400px);
-            min-height: 400px;
-            position: relative;
-            z-index: 5;
-            overflow-y: auto;
+        /* 虚拟形象容器 */
+        .avatar-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 300px;
+            z-index: 10;
+            pointer-events: none;
             display: flex;
             flex-direction: column;
-            gap: 25px;
-            background: rgba(10, 15, 30, 0.4);
-            backdrop-filter: blur(15px);
-            border-radius: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
-            scrollbar-width: thin;
-            scrollbar-color: var(--primary) transparent;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
         }
 
-        /* 自定义滚动条 */
-        #dialogue-container::-webkit-scrollbar {
-            width: 6px;
+        /* 当有对话时，特效不再位移，保持居中以增强沉浸感 */
+        body.has-dialogue .avatar-container {
+            top: 50%;
+            transform: translate(-50%, -50%) scale(1);
         }
 
-        #dialogue-container::-webkit-scrollbar-track {
-            background: transparent;
+        #avatar-canvas {
+            width: 100%;
+            height: 100%;
         }
 
-        #dialogue-container::-webkit-scrollbar-thumb {
-            background: rgba(74, 108, 247, 0.5);
-            border-radius: 10px;
+        .avatar-status-text {
+            display: none; /* 隐藏状态文字 */
         }
 
-        #dialogue-container::-webkit-scrollbar-thumb:hover {
-            background: var(--primary);
+        /* 对话记录抽屉 - 侧边滑出式 */
+        #dialogue-container {
+            position: fixed;
+            right: -100%; /* 默认隐藏 */
+            top: 0;
+            width: 100%;
+            max-width: 450px;
+            height: 100vh;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(25px);
+            z-index: 1000;
+            padding: 0; /* 移除内边距，交给内部元素处理 */
+            overflow-y: auto;
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.05);
+            border-left: 1px solid var(--glass-border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 悬停头部 */
+        .dialogue-header-sticky {
+            position: sticky;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px 25px;
+            z-index: 1001;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #messages-list {
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding-bottom: 120px; /* 留出底部控制条空间 */
+        }
+
+        #dialogue-container.active {
+            right: 0;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 600px) {
+            #dialogue-container {
+                max-width: 100%;
+            }
         }
 
         /* 消息样式 */
         .message {
+            max-width: 85%;
             padding: 16px 24px;
-            border-radius: 20px;
-            max-width: 80%;
+            border-radius: 24px;
             position: relative;
-            opacity: 0;
-            transform: translateY(20px);
-            animation: fadeUp 0.4s ease-out forwards;
-            transition: all 0.3s ease;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            animation: slideUp 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+            font-size: 1.05rem;
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--glass-border);
         }
 
-        .message:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-            border-color: rgba(255, 255, 255, 0.1);
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .message.role-user {
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
             align-self: flex-end;
-            border-bottom-right-radius: 4px;
+            background: var(--primary);
             color: white;
-            box-shadow: 0 4px 15px rgba(74, 108, 247, 0.3);
+            border-bottom-right-radius: 4px;
         }
 
         .message.role-assistant, .message.role-bot {
-            background: rgba(30, 41, 59, 0.9);
             align-self: flex-start;
+            background: var(--bg-card);
+            color: var(--text-main);
             border-bottom-left-radius: 4px;
-            color: var(--text-light);
-            border-left: 4px solid var(--primary);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
         .message.role-system {
-            background: rgba(148, 163, 184, 0.1);
             align-self: center;
-            text-align: center;
-            max-width: 90%;
-            font-size: 0.9rem;
-            color: var(--text-muted);
-            border: none;
+            background: transparent;
             box-shadow: none;
+            border: none;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-align: center;
         }
 
         .message-content {
-            font-size: 1.05rem;
-            line-height: 1.6;
-            word-wrap: break-word;
+            line-height: 1.7;
         }
 
-        /* Markdown 样式优化 */
-        .message-content p { margin-bottom: 1em; }
+        /* Markdown 内容微调 */
+        .message-content p { margin-bottom: 0.8rem; }
         .message-content p:last-child { margin-bottom: 0; }
-        .message-content code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: 'Fira Code', 'Consolas', monospace;
-            font-size: 0.9em;
-            color: var(--accent);
-        }
         .message-content pre {
-            background: rgba(10, 15, 30, 0.9);
+            background: #f1f3f9;
             padding: 15px;
             border-radius: 12px;
+            margin: 10px 0;
             overflow-x: auto;
-            margin: 15px 0;
-            border: 1px solid rgba(74, 108, 247, 0.3);
-        }
-        .message-content pre code {
-            background: transparent;
-            padding: 0;
-            color: #e2e8f0;
-        }
-        .message-content ul, .message-content ol {
-            margin-left: 25px;
-            margin-bottom: 15px;
-        }
-        .message-content li {
-            margin-bottom: 5px;
-        }
-        .message-content h1, .message-content h2, .message-content h3 {
-            margin: 15px 0 10px 0;
-            color: var(--primary);
-        }
-        .message-content blockquote {
-            border-left: 4px solid var(--primary);
-            padding-left: 15px;
-            color: var(--text-muted);
-            margin: 10px 0;
-            background: rgba(74, 108, 247, 0.05);
-            border-radius: 0 8px 8px 0;
-            padding-top: 5px;
-            padding-bottom: 5px;
-        }
-        .message-content table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 15px 0;
-        }
-        .message-content th, .message-content td {
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 8px 12px;
-            text-align: left;
-        }
-        .message-content th {
-            background: rgba(74, 108, 247, 0.1);
         }
 
-        .message-content img {
-            max-width: 100%;
-            border-radius: 8px;
-            margin: 10px 0;
-        }
-
-        .role-tag {
-            font-size: 0.7rem;
-            font-weight: 800;
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            opacity: 0.7;
-        }
-
-        .role-user .role-tag { text-align: right; color: rgba(255, 255, 255, 0.9); }
-        .role-assistant .role-tag, .role-bot .role-tag { color: var(--primary); }
-
-        .timestamp {
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            margin-top: 8px;
-            opacity: 0.5;
-        }
-
-        .role-user .timestamp { text-align: right; }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            font-size: 1.2rem;
-            color: var(--text-muted);
-            position: absolute;
-            top: 50%;
+        /* 底部控制台 */
+        .controls-bar {
+            position: fixed;
+            bottom: 40px;
             left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 10;
-            background: var(--glass-bg);
-            border-radius: 20px;
-            padding: 30px 50px;
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--glass-border);
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
-        }
-
-        .loading i {
-            font-size: 2.5rem;
-            margin-bottom: 15px;
-            display: block;
-            color: var(--primary);
-            animation: spin 2s linear infinite;
-        }
-
-        .message-actions {
-            position: absolute;
-            bottom: -15px;
-            right: 20px;
-            display: flex;
-            gap: 10px;
-            opacity: 0;
-            transition: var(--transition);
-        }
-
-        .message:hover .message-actions {
-            opacity: 1;
-            transform: translateY(5px);
-        }
-
-        .action-btn {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: rgba(15, 23, 42, 0.8);
+            transform: translateX(-50%);
             display: flex;
             align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: var(--transition);
+            gap: 15px;
+            padding: 12px 30px;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            border-radius: 50px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.08);
             border: 1px solid var(--glass-border);
-            color: var(--text-light);
-        }
-
-        .action-btn:hover {
-            transform: scale(1.1);
-            background: var(--primary);
-        }
-
-        /* 日志切换按钮 */
-        .log-toggle {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
             z-index: 100;
+            transition: var(--transition);
+        }
+
+        .control-btn {
             width: 50px;
             height: 50px;
             border-radius: 50%;
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border: none;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
             font-size: 1.2rem;
             cursor: pointer;
-            box-shadow: 0 5px 15px rgba(74, 108, 247, 0.5);
             transition: var(--transition);
+            background: transparent;
+            color: var(--text-main);
         }
 
-        .log-toggle:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 20px rgba(74, 108, 247, 0.7);
+        .control-btn:hover {
+            background: var(--primary-soft);
+            color: var(--primary);
+            transform: translateY(-2px);
         }
 
-        /* 日志容器 - 默认隐藏 */
-        .log-container {
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 20px;
-            position: relative;
-            z-index: 5;
-            background: rgba(10, 15, 30, 0.6);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(74, 108, 247, 0.2);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-            height: 0;
-            overflow: hidden;
-            opacity: 0;
-            transition: all 0.5s ease;
+        .control-btn.main-action {
+            width: 65px;
+            height: 65px;
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 8px 20px rgba(82, 113, 255, 0.3);
         }
 
-        .log-container.visible {
-            height: 200px;
-            opacity: 1;
-            margin-bottom: 20px;
+        .control-btn.main-action:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 12px 25px rgba(82, 113, 255, 0.4);
         }
 
-        .log-header {
+        .control-btn.stop { color: #ff5e57; }
+        .control-btn.stop:hover { background: rgba(255, 94, 87, 0.1); }
+
+        .control-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* 日志和设置切换 */
+        .side-actions {
+            position: fixed;
+            right: 30px;
+            bottom: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 100;
+        }
+
+        .side-btn {
+            width: 45px;
+            height: 45px;
+            border-radius: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: var(--shadow-soft);
+            transition: var(--transition);
+            color: var(--text-muted);
+        }
+
+        .side-btn:hover {
+            transform: translateX(-5px);
+            color: var(--primary);
+        }
+
+        /* 抽屉样式 (用于日志和设置) */
+        .drawer {
+            position: fixed;
+            right: -400px;
+            top: 0;
+            width: 350px;
+            height: 100%;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.05);
+            z-index: 200;
+            transition: var(--transition);
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .drawer.active { right: 0; }
+
+        .drawer-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid rgba(74, 108, 247, 0.2);
-        }
-
-        .log-header h3 {
-            font-size: 1.3rem;
-            background: linear-gradient(90deg, var(--primary), var(--accent));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
         }
 
         .log-content {
-            height: 130px;
+            flex: 1;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .log-entry {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.02);
+            word-break: break-all;
+        }
+
+        .log-entry.info { color: var(--primary); }
+        .log-entry.warning { color: #f1c40f; }
+        .log-entry.error { color: var(--accent); }
+        .log-entry.debug { color: #95a5a6; opacity: 0.8; font-family: monospace; font-size: 0.75rem; }
+        .log-entry.system { color: var(--text-muted); font-style: italic; }
+
+        /* 模态框通用样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-container {
+            max-width: 800px;
+            margin: 50px auto;
+            background: var(--bg-card);
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+            padding: 30px;
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-soft);
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal-content {
+            flex: 1;
             overflow-y: auto;
             padding-right: 10px;
         }
 
-        .log-content::-webkit-scrollbar {
-            width: 6px;
+        .modal-footer {
+            margin-top: 20px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
         }
 
-        .log-content::-webkit-scrollbar-thumb {
-            background: var(--primary);
-            border-radius: 3px;
-        }
-
-        .log-entry {
-            margin: 5px 0;
-            padding: 8px 12px;
-            border-radius: 10px;
-            font-size: 0.9rem;
-            background: rgba(15, 23, 42, 0.3);
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-main);
+            font-size: 1.5rem;
+            cursor: pointer;
             transition: var(--transition);
         }
 
-        .log-entry:hover {
-            background: rgba(30, 41, 59, 0.5);
+        .close-btn:hover {
+            color: var(--accent);
+            transform: rotate(90deg);
         }
 
-        .log-entry.system {
-            border-left: 3px solid var(--text-muted);
-        }
-
-        .log-entry.recorder {
-            border-left: 3px solid var(--primary);
-        }
-
-        .log-entry.player {
-            border-left: 3px solid var(--success);
-        }
-
-        .log-entry.error {
-            border-left: 3px solid var(--accent);
-        }
-
-        /* 动画效果 */
-        @keyframes fadeUp {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
-
-        .floating {
-            animation: float 4s ease-in-out infinite;
-        }
-
-        /* 响应式设计 */
+        /* 响应式适配 */
         @media (max-width: 768px) {
-            header h1 {
-                font-size: 1.8rem;
+            header { padding: 15px 20px; }
+            header .logo span { font-size: 1.2rem; }
+            
+            .avatar-container { width: 200px; height: 200px; }
+            body.has-dialogue .avatar-container { top: 80px; transform: translate(-50%, 0) scale(0.5); }
+            
+            #dialogue-container { padding: 100px 15px 160px; }
+            .message { max-width: 92%; padding: 12px 18px; font-size: 1rem; }
+            
+            .controls-bar { 
+                width: calc(100% - 30px); 
+                bottom: 20px; 
+                padding: 8px 15px;
+                gap: 10px;
             }
-
-            .control-panel, #dialogue-container, .log-container {
-                margin: 15px;
-                padding: 15px;
+            .control-btn { width: 45px; height: 45px; font-size: 1.1rem; }
+            .control-btn.main-action { width: 55px; height: 55px; }
+            
+            .side-actions { 
+                right: 15px; 
+                bottom: 100px; 
+                gap: 10px;
             }
-
-            .control-buttons {
-                flex-direction: column;
-            }
-
-            .control-btn {
-                min-width: 100%;
-            }
-
-            #dialogue-container {
-                height: calc(100vh - 450px);
-            }
-
-            .message {
-                max-width: 90%;
-                padding: 15px;
-            }
-
-            .message-content {
-                font-size: 1rem;
-            }
+            .side-btn { width: 40px; height: 40px; }
+            
+            .drawer { width: 100%; right: -100%; padding: 20px; }
+            .modal-container { width: 95%; margin: 10px auto; height: 95vh; padding: 15px; border-radius: 16px; }
         }
     </style>
 </head>
 <body>
-    <div class="tech-bg">
-        <div class="grid-line"></div>
-    </div>
+    <div class="ambient-bg"></div>
 
     <header>
-        <div style="position: absolute; right: 30px; top: 50%; transform: translateY(-50%);">
-            <a href="/logout" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem; transition: var(--transition); display: flex; align-items: center; gap: 5px;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">
-                <i class="fas fa-sign-out-alt"></i> 退出登录
+        <div class="logo">
+            <i class="fas fa-feather-alt"></i>
+            <span>百聆 BaiLing</span>
+        </div>
+        <div class="header-actions">
+            <a href="/logout" class="side-btn" title="退出登录">
+                <i class="fas fa-sign-out-alt"></i>
             </a>
         </div>
-        <h1><i class="fas fa-comments"></i> 百聆(BaiLing) <span style="font-size: 1.2rem; vertical-align: middle;">· 实时对话</span></h1>
     </header>
 
-    <!-- 控制面板 -->
-    <div class="control-panel">
-        <div class="status-box">
-            <div class="status-info">
-                <div class="status-indicator disconnected"></div>
-                <div class="status-text">状态: 未连接</div>
-            </div>
-            <div class="settings-box">
-                <label for="historyLimit">历史记录上限:</label>
-                <input type="number" id="historyLimit" class="settings-input" value="20" min="1" max="100">
-            </div>
-        </div>
-
-        <div class="control-buttons">
-            <button id="startBtn" class="control-btn">
-                <i class="fas fa-play-circle"></i> 开始对话
-            </button>
-            <button id="stopBtn" class="control-btn stop" disabled>
-                <i class="fas fa-stop-circle"></i> 停止
-            </button>
-            <button id="interruptBtn" class="control-btn interrupt" disabled>
-                <i class="fas fa-hand-paper"></i> 打断
-            </button>
-            <button id="tempFilesBtn" class="control-btn" style="background: linear-gradient(135deg, rgba(148, 163, 184, 0.3), rgba(100, 116, 139, 0.2)); border: 1px solid rgba(148, 163, 184, 0.5);">
-                <i class="fas fa-folder-open"></i> 临时文件
-            </button>
-            <button id="adminBtn" class="control-btn" style="display: none; background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(124, 58, 237, 0.2)); border: 1px solid rgba(168, 85, 247, 0.5);">
-                <i class="fas fa-user-shield"></i> 管理面板
-            </button>
-        </div>
-
+    <div class="avatar-container">
+        <canvas id="avatar-canvas"></canvas>
+        <div class="avatar-status-text" id="avatar-status">等待连接...</div>
     </div>
 
-    <!-- 对话容器 -->
-    <div id="dialogue-container">
-<!--        <div class="message role-system fade-in" style="opacity:1; transform:none;">-->
-<!--            <div class="role-tag">系统</div>-->
-<!--            <div class="message-content">-->
-<!--                欢迎使用百聆智能语音对话系统！点击"开始对话"按钮开始体验-->
-<!--            </div>-->
-<!--            <div class="timestamp">10:00</div>-->
-<!--        </div>-->
+    <main id="dialogue-container">
+        <div class="dialogue-header-sticky">
+            <h3 style="margin: 0; color: var(--primary);">对话记录</h3>
+            <button class="close-btn" style="font-size: 1.2rem;" onclick="document.getElementById('dialogue-container').classList.remove('active')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div id="messages-list">
+            <!-- 消息将通过 JS 动态插入 -->
+        </div>
+    </main>
 
-<!--        <div class="message role-bot fade-in" style="opacity:1; transform:none;">-->
-<!--            <div class="role-tag">百聆</div>-->
-<!--            <div class="message-content">-->
-<!--                您好！我是百聆AI助手，可以为您提供自然流畅的语音对话服务-->
-<!--            </div>-->
-<!--            <div class="timestamp">10:00</div>-->
-<!--        </div>-->
+    <div class="controls-bar">
+        <button id="dialogueToggle" class="control-btn" title="显示对话记录" style="position: relative;">
+            <i class="fas fa-comment-alt"></i>
+            <span id="messageBadge" style="display: none; position: absolute; top: 5px; right: 5px; width: 10px; height: 10px; background: #ff5e57; border-radius: 50%; border: 2px solid white;"></span>
+        </button>
+        <button id="startBtn" class="control-btn main-action" title="开始对话">
+            <i class="fas fa-microphone"></i>
+        </button>
+        <button id="stopBtn" class="control-btn stop" title="停止" disabled>
+            <i class="fas fa-stop"></i>
+        </button>
+        <button id="interruptBtn" class="control-btn" title="打断" disabled>
+            <i class="fas fa-hand-paper"></i>
+        </button>
     </div>
 
-    <!-- 临时文件管理模态框 -->
-    <div id="tempFilesModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; backdrop-filter: blur(5px);">
-        <div style="max-width: 800px; margin: 50px auto; background: var(--bg-light); border-radius: 20px; border: 1px solid var(--primary); padding: 30px; height: 80vh; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0;"><i class="fas fa-folder-open"></i> 临时文件管理</h2>
-                <button id="closeTempFilesBtn" style="background: none; border: none; color: var(--text-light); font-size: 1.5rem; cursor: pointer;">
+    <div class="side-actions">
+        <button id="logToggle" class="side-btn" title="查看日志">
+            <i class="fas fa-terminal"></i>
+        </button>
+        <button id="tempFilesBtn" class="side-btn" title="临时文件">
+            <i class="fas fa-folder-open"></i>
+        </button>
+        <button id="adminBtn" class="side-btn" title="管理面板" style="display: none;">
+            <i class="fas fa-user-shield"></i>
+        </button>
+    </div>
+
+    <!-- 日志抽屉 -->
+    <div class="drawer" id="logDrawer">
+        <div class="drawer-header">
+            <h3>系统日志</h3>
+            <button class="side-btn close-drawer"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="log-content" id="logContent">
+            <div class="log-entry">系统已就绪</div>
+        </div>
+    </div>
+
+    <!-- 临时文件模态框 -->
+    <div id="tempFilesModal" class="modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2><i class="fas fa-folder-open"></i> 临时文件管理</h2>
+                <button id="closeTempFilesBtn" class="close-btn">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div id="tempFilesContent" style="flex: 1; overflow-y: auto; padding-right: 10px;">
-                <!-- 文件列表将通过 JS 动态生成 -->
+            <div id="tempFilesContent" class="modal-content">
                 <div style="text-align: center; padding: 50px;">
                     <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: var(--primary);"></i>
                     <p>加载中...</p>
                 </div>
             </div>
-            <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 15px;">
-                <button id="refreshTempFilesBtn" class="control-btn" style="padding: 10px 20px; min-width: auto; font-size: 0.9rem;">
+            <div class="modal-footer">
+                <button id="refreshTempFilesBtn" class="control-btn" style="padding: 10px 20px; border-radius: 12px; font-size: 0.9rem;">
                     <i class="fas fa-sync"></i> 刷新
                 </button>
-                <button id="batchDeleteBtn" class="control-btn stop" style="padding: 10px 20px; min-width: auto; font-size: 0.9rem;" disabled>
+                <button id="batchDeleteBtn" class="control-btn stop" style="padding: 10px 20px; border-radius: 12px; font-size: 0.9rem;" disabled>
                     <i class="fas fa-trash"></i> 批量删除 (<span id="selectedCount">0</span>)
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- 管理员控制面板模态框 -->
-    <div id="adminPanelModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; backdrop-filter: blur(5px);">
-        <div style="max-width: 900px; margin: 50px auto; background: var(--bg-light); border-radius: 20px; border: 1px solid #a855f7; padding: 30px; height: 80vh; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0; color: #a855f7;"><i class="fas fa-user-shield"></i> 系统管理面板</h2>
-                <button id="closeAdminPanelBtn" style="background: none; border: none; color: var(--text-light); font-size: 1.5rem; cursor: pointer;">
+    <!-- 管理员面板 -->
+    <div id="adminPanelModal" class="modal">
+        <div class="modal-container" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 style="color: var(--primary);"><i class="fas fa-user-shield"></i> 系统管理面板</h2>
+                <button id="closeAdminPanelBtn" class="close-btn">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div id="adminPanelContent" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+            <div id="adminPanelContent" class="modal-content">
                 <div style="text-align: center; padding: 50px;">
-                    <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: #a855f7;"></i>
+                    <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: var(--primary);"></i>
                     <p>加载活跃连接...</p>
                 </div>
             </div>
-            <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
-                <button id="refreshAdminBtn" class="control-btn" style="padding: 10px 20px; min-width: auto; font-size: 0.9rem; background: linear-gradient(135deg, #a855f7, #7c3aed);">
+            <div class="modal-footer">
+                <button id="refreshAdminBtn" class="control-btn" style="padding: 10px 20px; border-radius: 12px; font-size: 0.9rem; background: var(--primary); color: white;">
                     <i class="fas fa-sync"></i> 刷新列表
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- 日志容器 - 默认隐藏 -->
-    <div class="log-container" id="logContainer">
-        <div class="log-header">
-            <h3><i class="fas fa-clipboard-list"></i> 系统日志</h3>
-        </div>
-        <div class="log-content" id="logContent">
-            <div class="log-entry system">系统已就绪，等待用户操作</div>
-        </div>
-    </div>
-
-    <!-- 日志切换按钮 -->
-    <div class="log-toggle" id="logToggle">
-        <i class="fas fa-bars"></i>
-    </div>
-
     <script>
+        // 全局错误捕获，方便调试
+        window.onerror = function(message, source, lineno, colno, error) {
+            const errorMsg = `[JS错误] ${message} at ${source}:${lineno}:${colno}`;
+            console.error(errorMsg, error);
+            if (typeof addLog === 'function') {
+                addLog(errorMsg, 'error');
+            }
+            return false;
+        };
+
         function genId() {
-          const arr = crypto.getRandomValues(new Uint32Array(1));
-          return arr[0].toString(16); // 例如："9af3b2c"
+          try {
+            if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+              const arr = crypto.getRandomValues(new Uint32Array(1));
+              return arr[0].toString(16);
+            }
+          } catch (e) {
+            console.warn("crypto.getRandomValues failed, using Math.random fallback", e);
+          }
+          return Math.random().toString(16).slice(2, 10);
         }
         function getUserId() {
           let uid = sessionStorage.getItem("user_id");
@@ -851,6 +629,12 @@
         const userId = getUserId();
         const connId = getConnId();
         let currentUser = null;
+        
+        // 全局音频状态，提前声明以供特效逻辑使用
+        let globalAudioContext = null;
+        let globalAnalyser = null;
+        let frequencyData = null;
+        
         console.log("Your user_id is", userId, "conn_id is", connId);
 
         // DOM元素
@@ -858,9 +642,9 @@
         const stopBtn = document.getElementById('stopBtn');
         const interruptBtn = document.getElementById('interruptBtn');
         const logToggle = document.getElementById('logToggle');
-        const statusIndicator = document.querySelector('.status-indicator');
-        const statusText = document.querySelector('.status-text');
-        const logContainer = document.getElementById('logContainer');
+        const avatarStatusText = document.getElementById('avatar-status');
+        const dialogueContainer = document.getElementById('dialogue-container');
+        const logDrawer = document.getElementById('logDrawer');
         const logContent = document.getElementById('logContent');
         const tempFilesBtn = document.getElementById('tempFilesBtn');
         const tempFilesModal = document.getElementById('tempFilesModal');
@@ -869,12 +653,207 @@
         const refreshTempFilesBtn = document.getElementById('refreshTempFilesBtn');
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
         const selectedCountSpan = document.getElementById('selectedCount');
-        const historyLimitInput = document.getElementById('historyLimit');
         const adminBtn = document.getElementById('adminBtn');
         const adminPanelModal = document.getElementById('adminPanelModal');
         const closeAdminPanelBtn = document.getElementById('closeAdminPanelBtn');
         const adminPanelContent = document.getElementById('adminPanelContent');
+        const dialogueToggle = document.getElementById('dialogueToggle');
+        const messageBadge = document.getElementById('messageBadge');
+
+        dialogueToggle.addEventListener('click', () => {
+            dialogueContainer.classList.toggle('active');
+            if (dialogueContainer.classList.contains('active')) {
+                messageBadge.style.display = 'none';
+            }
+        });
         const refreshAdminBtn = document.getElementById('refreshAdminBtn');
+
+        // 粒子虚拟形象逻辑
+        class ParticleAvatar {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                if (!this.canvas) {
+                    console.error(`Canvas element with id '${canvasId}' not found`);
+                    return;
+                }
+                this.ctx = this.canvas.getContext('2d');
+                if (!this.ctx) {
+                    console.error("Could not get 2D context for canvas");
+                    return;
+                }
+                this.state = 'idle'; 
+                this.baseRadius = 70;
+                this.targetBaseRadius = 70;
+                this.hue = 220; 
+                this.targetHue = 220;
+                this.pointCount = 100; // 增加点数使线条更圆滑
+                this.smoothedData = new Array(this.pointCount).fill(0);
+                this.animationId = null;
+                
+                // 多层配置：[不透明度, 粗细, 旋转速度系数]
+                this.layers = [
+                    { opacity: 0.6, width: 3, speed: 1.0, phase: 0 },
+                    { opacity: 0.3, width: 1.5, speed: -0.7, phase: Math.PI / 3 },
+                    { opacity: 0.2, width: 1, speed: 1.4, phase: Math.PI * 2 / 3 }
+                ];
+
+                this.init();
+                this.animate();
+                window.addEventListener('resize', () => this.init());
+            }
+
+            init() {
+                if (!this.canvas || !this.ctx) return;
+                const rect = this.canvas.getBoundingClientRect();
+                this.width = rect.width || 300;
+                this.height = rect.height || 300;
+                const dpr = window.devicePixelRatio || 1;
+                this.canvas.width = this.width * dpr;
+                this.canvas.height = this.height * dpr;
+                this.ctx.scale(dpr, dpr);
+            }
+
+            setState(state) {
+                this.state = state;
+                if (state === 'listening') {
+                    this.targetHue = 210; // 亮蓝色
+                    this.targetBaseRadius = 80;
+                } else if (state === 'thinking') {
+                    this.targetHue = 280; // 紫色
+                    this.targetBaseRadius = 75;
+                } else if (state === 'speaking') {
+                    this.targetHue = 30;  // 温暖的橙色
+                    this.targetBaseRadius = 85;
+                } else {
+                    this.targetHue = 220; // 柔和蓝
+                    this.targetBaseRadius = 70;
+                }
+            }
+
+            draw() {
+                if (!this.ctx || !this.width) return;
+                const centerX = this.width / 2;
+                const centerY = this.height / 2;
+                
+                // 物理平滑过渡：基础半径和色相
+                this.baseRadius += (this.targetBaseRadius - this.baseRadius) * 0.1;
+                // 色相环绕处理
+                let hueDiff = this.targetHue - this.hue;
+                if (Math.abs(hueDiff) > 180) hueDiff -= Math.sign(hueDiff) * 360;
+                this.hue = (this.hue + hueDiff * 0.05 + 360) % 360;
+
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                
+                let hasAudio = false;
+                if (globalAnalyser && frequencyData) {
+                    globalAnalyser.getByteFrequencyData(frequencyData);
+                    for(let i=0; i<15; i++) { if(frequencyData[i] > 10) { hasAudio = true; break; } }
+                }
+                
+                const time = Date.now() * 0.0015;
+                const isVeryIdle = this.state === 'idle' && !hasAudio;
+                
+                // 1. 绘制中心柔光背景 (Glow Foundation)
+                const bgGradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, this.baseRadius * 2);
+                const bgOpacity = isVeryIdle ? 0.05 : 0.15;
+                bgGradient.addColorStop(0, `hsla(${this.hue}, 80%, 60%, ${bgOpacity})`);
+                bgGradient.addColorStop(1, `hsla(${this.hue}, 80%, 60%, 0)`);
+                this.ctx.fillStyle = bgGradient;
+                this.ctx.fillRect(0, 0, this.width, this.height);
+
+                this.ctx.save();
+                this.ctx.globalCompositeOperation = 'lighter';
+                
+                // 2. 绘制多层波纹
+                this.layers.forEach((layer, lIdx) => {
+                    this.ctx.beginPath();
+                    this.ctx.lineWidth = isVeryIdle ? layer.width * 0.7 : layer.width;
+                    const alpha = isVeryIdle ? layer.opacity * 0.4 : layer.opacity;
+                    this.ctx.strokeStyle = `hsla(${this.hue}, 90%, 70%, ${alpha})`;
+                    
+                    // 添加发光效果
+                    this.ctx.shadowBlur = isVeryIdle ? 5 : 15;
+                    this.ctx.shadowColor = `hsla(${this.hue}, 90%, 70%, ${alpha})`;
+
+                    for (let i = 0; i <= this.pointCount; i++) {
+                        const angle = (i / this.pointCount) * Math.PI * 2;
+                        
+                        let audioVal = 0;
+                        if (!isVeryIdle) {
+                            // 不同层取不同的频率段，增加灵动感
+                            let freqStep = Math.floor(frequencyData.length / 3);
+                            let freqIdx = (lIdx * freqStep + Math.floor(i % (this.pointCount/2))) % frequencyData.length;
+                            audioVal = (frequencyData[freqIdx] / 255) * (1 + lIdx * 0.2);
+                        }
+                        
+                        // 平滑音频数据
+                        const idx = i % this.pointCount;
+                        this.smoothedData[idx] += (audioVal - this.smoothedData[idx]) * 0.15;
+                        const val = this.smoothedData[idx];
+
+                        // 复杂的波形组合
+                        let wave = 0;
+                        const phaseShift = time * layer.speed + layer.phase;
+                        
+                        if (this.state === 'thinking') {
+                            wave = Math.sin(angle * 6 + phaseShift * 3) * 8 + Math.cos(angle * 3 + phaseShift) * 4;
+                        } else if (this.state === 'listening') {
+                            wave = Math.sin(angle * 4 + phaseShift * 2) * 6;
+                        } else if (this.state === 'speaking') {
+                            wave = Math.sin(angle * 2 + phaseShift * 5) * (10 + val * 20);
+                        } else {
+                            // Idle breathing organic wave
+                            wave = Math.sin(angle * 3 + phaseShift) * 3 + Math.cos(angle * 2 + phaseShift * 0.5) * 2;
+                        }
+
+                        const radius = this.baseRadius + wave + (val * 60 * (1 - lIdx * 0.2));
+                        const x = centerX + Math.cos(angle) * radius;
+                        const y = centerY + Math.sin(angle) * radius;
+
+                        if (i === 0) {
+                            this.ctx.moveTo(x, y);
+                        } else {
+                            // 使用 quadraticCurveTo 可能会更平滑，但 lineTo 在点数够多时效果也不错
+                            this.ctx.lineTo(x, y);
+                        }
+                    }
+                    
+                    this.ctx.closePath();
+                    this.ctx.stroke();
+                });
+                
+                this.ctx.restore();
+
+                // 3. 漂浮的灵动微粒
+                const pCount = isVeryIdle ? 6 : 15;
+                for (let i = 0; i < pCount; i++) {
+                    const pSpeed = (0.1 + (i % 3) * 0.05);
+                    const pAngle = (time * pSpeed) + (i / pCount) * Math.PI * 2;
+                    const pDist = this.baseRadius + 50 + Math.sin(time * 0.5 + i) * 10;
+                    const px = centerX + Math.cos(pAngle) * pDist;
+                    const py = centerY + Math.sin(pAngle) * pDist;
+                    
+                    const pSize = Math.sin(time + i) * 1 + 1.5;
+                    this.ctx.beginPath();
+                    this.ctx.arc(px, py, pSize, 0, Math.PI * 2);
+                    this.ctx.fillStyle = `hsla(${this.hue}, 80%, 80%, ${isVeryIdle ? 0.15 : 0.4})`;
+                    this.ctx.fill();
+                    
+                    // 微粒也带一点发光
+                    if (!isVeryIdle) {
+                        this.ctx.shadowBlur = 10;
+                        this.ctx.shadowColor = `hsla(${this.hue}, 80%, 80%, 0.5)`;
+                    }
+                }
+            }
+
+            animate() {
+                this.draw();
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+        }
+
+        const avatar = new ParticleAvatar('avatar-canvas');
 
         let selectedFiles = new Set();
         let dialogueHistory = []; // 对话历史记录
@@ -887,7 +866,7 @@
                     currentUser = await response.json();
                     console.log("Logged in as:", currentUser);
                     if (currentUser.role === 'admin') {
-                        adminBtn.style.display = 'block';
+                        adminBtn.style.display = 'flex';
                     }
                 }
             } catch (err) {
@@ -911,25 +890,33 @@
         function updateStatus(status, message) {
             // status: connecting, connected, disconnected, processing, thinking, responding, listening, speaking
             connectionStatus = status;
-            statusIndicator.className = 'status-indicator ' + status;
-            if (message) {
-                statusText.textContent = '状态: ' + message;
-            } else {
-                const statusMap = {
-                    'connecting': '连接中...',
-                    'connected': '已连接 (就绪)',
-                    'disconnected': '未连接',
-                    'processing': '正在处理语音...',
-                    'thinking': '正在思考...',
-                    'responding': '正在回复...',
-                    'listening': '正在听你说...',
-                    'speaking': '正在说话...',
-                    'idle': '已连接 (就绪)'
-                };
-                statusText.textContent = '状态: ' + (statusMap[status] || status);
-                if (status === 'idle') {
-                    statusIndicator.className = 'status-indicator connected';
-                }
+            
+            const statusMap = {
+                'connecting': { text: '正在连接...', state: 'thinking' },
+                'connected': { text: '已连接，准备就绪', state: 'idle' },
+                'disconnected': { text: '连接已断开', state: 'idle' },
+                'processing': { text: '正在处理语音...', state: 'thinking' },
+                'thinking': { text: '正在思考中...', state: 'thinking' },
+                'responding': { text: '百聆正在回复...', state: 'speaking' },
+                'listening': { text: '正在倾听...', state: 'listening' },
+                'recording': { text: '正在倾听...', state: 'listening' },
+                'speaking': { text: '正在说话...', state: 'speaking' },
+                'idle': { text: '就绪', state: 'idle' }
+            };
+
+            const info = statusMap[status] || { text: message || status, state: 'idle' };
+            avatarStatusText.textContent = info.text;
+            avatar.setState(info.state);
+
+            // 更新按钮状态
+            if (status === 'listening' || status === 'speaking' || status === 'thinking' || status === 'connected') {
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                interruptBtn.disabled = false;
+            } else if (status === 'disconnected') {
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                interruptBtn.disabled = true;
             }
         }
 
@@ -937,20 +924,29 @@
         function addLog(message, type = 'system') {
             const entry = document.createElement('div');
             entry.className = `log-entry ${type}`;
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            entry.innerHTML = `<span style="opacity: 0.5; font-size: 0.8em; margin-right: 8px;">${new Date().toLocaleTimeString()}</span> ${message}`;
             logContent.appendChild(entry);
             logContent.scrollTop = logContent.scrollHeight;
         }
 
+        // 抽屉逻辑
+        logToggle.addEventListener('click', () => {
+            logDrawer.classList.add('active');
+        });
 
-        // 切换日志显示
-        function toggleLogs() {
-            logsVisible = !logsVisible;
-            logContainer.classList.toggle('visible', logsVisible);
-            logToggle.innerHTML = logsVisible ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+        // 修复日志关闭按钮事件绑定
+        const logCloseBtn = logDrawer.querySelector('.close-drawer');
+        if (logCloseBtn) {
+            logCloseBtn.addEventListener('click', () => {
+                logDrawer.classList.remove('active');
+            });
         }
 
         async function connect() {
+            // 在用户点击 connect 时，立即尝试初始化和恢复 AudioContext
+            // 这是绕过浏览器自动播放限制的最有效时机
+            initAudioContext();
+            
             // isManuallyStopped 只在 connect 内部作为判断，确保点击开始时能重置它
             if (isManuallyStopped) {
                 addLog("检测到手动停止状态，取消自动连接", 'warning');
@@ -987,27 +983,41 @@
 
                 websocket.onmessage = async (event) => {
                     if (websocket !== currentWebsocket) return;
+                    
                     if (typeof event.data === 'string') {
                         try {
                             const message = JSON.parse(event.data);
                             if (message.type === 'interrupt') {
                                 player.interrupt();
                                 updateStatus("disconnected", "收到打断指令");
-                                addLog("收到服务器打断指令");
+                                addLog("收到服务器打断指令", 'warning');
                             } else if (message.type == 'update_dialogue') {
-                                // addLog("收到对话更新");
                                 updateDialogue(message.data);
                             } else if (message.type === 'status_update') {
                                 updateStatus(message.status);
+                            } else if (message.type === 'debug') {
+                                addLog(`[后端] ${message.message}`, 'debug');
                             } else {
-                                addLog("收到未知指令数据：" + event.data);
+                                addLog("收到文本消息: " + event.data, 'debug');
                             }
                         } catch (e) {
-                            addLog("解析消息失败: " + e);
+                            addLog("解析消息失败: " + e, 'error');
                         }
+                    } else if (event.data instanceof ArrayBuffer) {
+                        const audioData = event.data;
+                        addLog(`[网络] 收到音频流: ${audioData.byteLength} 字节`, 'info');
+                        if (player) {
+                            player.playAudio(audioData);
+                        } else {
+                            addLog("播放器未初始化，丢弃音频数据", 'warning');
+                        }
+                    } else if (event.data instanceof Blob) {
+                        // 某些浏览器可能将二进制包装成 Blob
+                        addLog(`[网络] 收到 Blob 音频数据: ${event.data.size} 字节，正在转换...`, 'info');
+                        const arrayBuffer = await event.data.arrayBuffer();
+                        if (player) player.playAudio(arrayBuffer);
                     } else {
-                        const audioData = event.data; // ArrayBuffer
-                        player.playAudio(audioData);
+                        addLog(`收到未知格式消息: ${typeof event.data}`, 'warning');
                     }
                 };
 
@@ -1282,17 +1292,12 @@
         refreshTempFilesBtn.addEventListener('click', fetchTempFiles);
         batchDeleteBtn.addEventListener('click', batchDelete);
 
-        historyLimitInput.addEventListener('change', () => {
-            const maxHistory = parseInt(historyLimitInput.value) || 20;
-            if (dialogueHistory.length > maxHistory) {
-                dialogueHistory = dialogueHistory.slice(-maxHistory);
-                updateDialogue([]); // 重新渲染，不添加新消息
-            }
-        });
-
         window.onclick = (event) => {
             if (event.target === tempFilesModal) {
                 tempFilesModal.style.display = 'none';
+            }
+            if (event.target === adminPanelModal) {
+                adminPanelModal.style.display = 'none';
             }
         };
 
@@ -1307,26 +1312,40 @@
 
         // 更新对话
         function updateDialogue(newMessages) {
-            const container = document.getElementById('dialogue-container');
-            const maxHistory = parseInt(historyLimitInput.value) || 20;
+            const container = document.getElementById('messages-list');
+            const maxHistory = 30; // 调高历史上限
 
             // 如果 newMessages 不是数组，包装成数组
             const messagesToAdd = Array.isArray(newMessages) ? newMessages : [newMessages];
             
-            // 将新消息添加到历史记录并保存时间戳
-            const now = new Date();
-            const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-            
-            const messagesToAddWithTime = messagesToAdd.map(msg => ({
-                ...msg,
-                timestamp: msg.timestamp || timestamp
-            }));
-            
-            dialogueHistory = [...dialogueHistory, ...messagesToAddWithTime];
+            if (messagesToAdd.length > 0) {
+                // 将新消息添加到历史记录并保存时间戳
+                const now = new Date();
+                const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+                
+                const messagesToAddWithTime = messagesToAdd.map(msg => ({
+                    ...msg,
+                    timestamp: msg.timestamp || timestamp
+                }));
+                
+                dialogueHistory = [...dialogueHistory, ...messagesToAddWithTime];
+
+                // 如果抽屉没打开，显示红点
+                if (!dialogueContainer.classList.contains('active')) {
+                    messageBadge.style.display = 'block';
+                }
+            }
             
             // 应用历史记录上限
             if (dialogueHistory.length > maxHistory) {
                 dialogueHistory = dialogueHistory.slice(-maxHistory);
+            }
+
+            // 当有对话时，更新 body 类
+            if (dialogueHistory.length > 0) {
+                document.body.classList.add('has-dialogue');
+            } else {
+                document.body.classList.remove('has-dialogue');
             }
 
             // 清空容器重新渲染
@@ -1336,66 +1355,83 @@
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message role-${message.role}`;
 
-                // 角色标签文本
-                const roleText = {
-                    'user': '用户',
-                    'assistant': '百聆',
-                    'bot': '百聆',
-                    'admin': '管理员',
-                    'system': '系统'
-                }[message.role] || message.role;
-
                 // 使用 marked 解析 Markdown
                 let renderedContent = message.content;
                 if (typeof marked !== 'undefined') {
-                    // 确保 content 是字符串
                     const contentStr = String(message.content || '');
                     renderedContent = marked.parse(contentStr);
                 }
 
                 messageDiv.innerHTML = `
-                    <div class="role-tag">${roleText}</div>
                     <div class="message-content">
                         ${renderedContent}
                     </div>
-                    <div class="timestamp">${message.timestamp}</div>
                 `;
 
                 container.appendChild(messageDiv);
             });
 
-            // 滚动到底部
+            // 自动滚动到底部
             setTimeout(() => {
-                container.scrollTop = container.scrollHeight;
+                dialogueContainer.scrollTo({
+                    top: dialogueContainer.scrollHeight,
+                    behavior: 'smooth'
+                });
             }, 100);
+        }
+
+        function initAudioContext() {
+            try {
+                if (!globalAudioContext) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContextClass) {
+                        addLog("错误: 浏览器不支持 Web Audio API", "error");
+                        return null;
+                    }
+                    globalAudioContext = new AudioContextClass();
+                    
+                    // 初始化分析器
+                    globalAnalyser = globalAudioContext.createAnalyser();
+                    globalAnalyser.fftSize = 256; // 较小的 FFT 尺寸以提高性能
+                    const bufferLength = globalAnalyser.frequencyBinCount;
+                    frequencyData = new Uint8Array(bufferLength);
+                    
+                    addLog("[系统] 音频上下文及分析器已初始化", "info");
+                }
+                if (globalAudioContext.state === 'suspended') {
+                    globalAudioContext.resume().then(() => {
+                        addLog("[系统] 音频上下文已恢复运行", "info");
+                    });
+                }
+                return globalAudioContext;
+            } catch (e) {
+                addLog(`[系统] 初始化音频失败: ${e.message}`, "error");
+                return null;
+            }
         }
 
         class AudioPlayer {
             constructor(updateStatusFn, websocket) {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.audioContext = initAudioContext();
                 this.audioQueue = [];
-                this.rawQueue = []; // 新增：原始音频数据队列
-                this.isDecoding = false; // 新增：解码状态锁
+                this.rawQueue = [];
+                this.isDecoding = false;
                 this.isPlaying = false;
                 this.shouldInterrupt = false;
-                this.log = document.getElementById('logContainer');
                 this.updateStatus = updateStatusFn;
-                this.websocket = websocket
+                this.websocket = websocket;
+                this.addLog("已就绪");
             }
 
             addLog(message) {
-                const entry = document.createElement('div');
-                entry.className = 'log-entry';
-                entry.textContent = `[播放器] ${new Date().toLocaleTimeString()}: ${message}`;
-                this.log.appendChild(entry);
-                this.log.scrollTop = this.log.scrollHeight;
+                addLog(`[播放器] ${message}`, 'info');
             }
 
-             sendPlaybackStatus(status, queueSize) {
+            sendPlaybackStatus(status, queueSize) {
                 if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                     const message = {
                         type: "playback_status",
-                        status: status, // e.g., 'playing', 'stopped', 'interrupted'
+                        status: status,
                         queue_size: queueSize,
                         timestamp: new Date().toISOString()
                     };
@@ -1404,33 +1440,80 @@
             }
 
             async playAudio(audioData) {
-                // 确保 AudioContext 已恢复（浏览器策略）
-                if (this.audioContext.state === 'suspended') {
-                    await this.audioContext.resume();
+                if (!audioData || audioData.byteLength === 0) {
+                    this.addLog("收到空音频数据，跳过");
+                    return;
                 }
                 
-                // 将原始数据放入队列，由统一的循环解码，确保顺序
+                // 先入队，确保数据不丢失
                 this.rawQueue.push(audioData);
-                this.processRawQueue();
+                this.addLog(`音频数据已入队 (队列长度: ${this.rawQueue.length}, 大小: ${audioData.byteLength} 字节)`);
+
+                // 异步处理，不阻塞主线程
+                this.processRawQueue().catch(err => {
+                    this.addLog(`处理音频队列异常: ${err.message}`, 'error');
+                });
             }
 
             async processRawQueue() {
-                if (this.isDecoding || this.rawQueue.length === 0) return;
+                if (this.isDecoding || this.rawQueue.length === 0) {
+                    return;
+                }
                 
                 this.isDecoding = true;
+                
                 while (this.rawQueue.length > 0) {
+                    // 确保 AudioContext 在解码前是运行状态
+                    if (this.audioContext.state === 'suspended') {
+                        this.addLog("AudioContext 挂起中，尝试恢复...");
+                        try {
+                            await this.audioContext.resume();
+                            this.addLog("AudioContext 已恢复");
+                        } catch (e) {
+                            this.addLog("无法恢复 AudioContext: " + e.message, 'warning');
+                        }
+                    }
+
                     const audioData = this.rawQueue.shift();
                     try {
-                        const audioBuffer = await this.audioContext.decodeAudioData(audioData);
+                        const state = this.audioContext.state;
+                        this.addLog(`开始解码音频块 (${audioData.byteLength} 字节), Context状态: ${state}`);
+                        
+                        // 检查是否是有效的 WAV/MP3 格式
+                        const view = new Uint8Array(audioData);
+                        const isWav = view[0] === 82 && view[1] === 73 && view[2] === 70 && view[3] === 70; // 'RIFF'
+                        
+                        // 如果后端发来的是原始 PCM 或者是损坏的文件，decodeAudioData 会失败
+                        // 探测头部
+                        const header = Array.from(view.slice(0, 4)).map(b => String.fromCharCode(b)).join('');
+                        this.addLog(`音频探测: 格式=${isWav ? 'WAV' : '未知'}, 头=${header}`);
+
+                        const bufferCopy = audioData.slice(0);
+                        
+                        let audioBuffer;
+                        try {
+                            // 优先使用现代 Promise 接口
+                            audioBuffer = await this.audioContext.decodeAudioData(bufferCopy);
+                        } catch (e) {
+                            this.addLog(`解码失败 (${e.message})，尝试检查数据有效性...`, 'error');
+                            // 失败时也给后端发个确认，避免后端超时等待
+                            if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                                this.websocket.send(JSON.stringify({
+                                    type: "playback_finished",
+                                    error: "decode_failed"
+                                }));
+                            }
+                            continue; // 跳过损坏的块
+                        }
+                        
                         this.audioQueue.push(audioBuffer);
-                        this.addLog(`音频解码完成, 播放队列大小: ${this.audioQueue.length}`);
+                        this.addLog(`解码成功: 时长 ${audioBuffer.duration.toFixed(2)}s, 队列中待播放: ${this.audioQueue.length}`);
                         
                         if (!this.isPlaying) {
                             this.playNext();
                         }
                     } catch (error) {
-                        this.addLog(`解码错误: ${error}`);
-                        console.error("Audio decode error:", error);
+                        this.addLog(`解码循环异常: ${error.message || error}`, 'error');
                     }
                 }
                 this.isDecoding = false;
@@ -1440,49 +1523,83 @@
                 if (this.audioQueue.length === 0) {
                     this.isPlaying = false;
                     this.updateStatus('idle');
+                    this.sendPlaybackStatus('stopped', 0);
                     return;
                 }
 
-                this.isPlaying = true;
-                this.updateStatus('speaking');
-                const audioBuffer = this.audioQueue.shift();
-                const source = this.audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(this.audioContext.destination);
-                this.source = source;
-
-                const duration = audioBuffer.duration.toFixed(1);
-                this.addLog(`开始播放 (时长: ${duration}秒)`);
-                this.sendPlaybackStatus('playing', this.audioQueue.length);
-                source.onended = () => {
-                    this.addLog("播放完成");
-                    if (this.shouldInterrupt){
-                        this.sendPlaybackStatus('interrupted', this.audioQueue.length);
-                    } else {
-                        this.sendPlaybackStatus('completed', this.audioQueue.length);
+                try {
+                    this.isPlaying = true;
+                    this.updateStatus('speaking');
+                    const audioBuffer = this.audioQueue.shift();
+                    
+                    // 检查音频内容是否全为0 (静音检测)
+                    const data = audioBuffer.getChannelData(0);
+                    let maxAmp = 0;
+                    for (let i = 0; i < Math.min(data.length, 1000); i++) {
+                        if (Math.abs(data[i]) > maxAmp) maxAmp = Math.abs(data[i]);
                     }
-                    if (this.audioQueue.length > 0) {
-                        this.playNext();
-                    } else {
-                        this.isPlaying = false;
-                        this.shouldInterrupt = false;
+                    this.addLog(`准备播放: 时长=${audioBuffer.duration.toFixed(2)}s, 最大振幅(前1000采样)=${maxAmp.toFixed(4)}`);
 
-                        if (this.audioQueue.length === 0) {
-                            this.updateStatus("idle");
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    
+                    // 连接到分析器，再连接到输出
+                    source.connect(globalAnalyser);
+                    globalAnalyser.connect(this.audioContext.destination);
+                    
+                    this.source = source;
+
+                    this.addLog(`正在启动播放器... Context状态: ${this.audioContext.state}`);
+                    this.sendPlaybackStatus('playing', this.audioQueue.length);
+                    
+                    source.onended = () => {
+                        this.addLog("播放结束");
+                        
+                        // 发送确认给后端，解决 WebSocketPlayer 的 wait 阻塞
+                        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                            this.websocket.send(JSON.stringify({
+                                type: "playback_finished",
+                                timestamp: new Date().toISOString()
+                            }));
                         }
-                    }
-                };
 
-                source.start();
+                        if (this.shouldInterrupt) {
+                            this.sendPlaybackStatus('interrupted', this.audioQueue.length);
+                            this.shouldInterrupt = false;
+                        } else {
+                            this.sendPlaybackStatus('completed', this.audioQueue.length);
+                        }
+                        
+                        if (this.audioQueue.length > 0) {
+                    this.playNext();
+                } else {
+                    // 确保最后一段播放完也发送状态
+                    this.isPlaying = false;
+                    this.updateStatus("idle");
+                }
+            };
+
+            source.start(0);
+        } catch (e) {
+            this.addLog("启动播放失败: " + e);
+            // 失败时也要尝试通知后端，否则后端会一直阻塞
+            if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                this.websocket.send(JSON.stringify({
+                    type: "playback_finished",
+                    error: e.message
+                }));
             }
+            this.isPlaying = false;
+            this.sendPlaybackStatus('error', this.audioQueue.length);
+            this.playNext(); // 尝试播放下一个
+        }
+    }
 
             stopCurrent() {
                 if (this.source) {
                     try {
                         this.source.stop();
-                    } catch (e) {
-                        this.addLog("停止当前音频失败: " + e);
-                    }
+                    } catch (e) {}
                     this.source = null;
                 }
                 this.isPlaying = false;
@@ -1491,9 +1608,11 @@
             interrupt() {
                 this.shouldInterrupt = true;
                 this.audioQueue = [];
-                this.stopCurrent();  // <== 添加这一句
-                this.addLog("收到打断指令，清空播放队列并停止当前音频");
-                this.updateStatus("已打断", "disconnected");
+                this.rawQueue = [];
+                this.stopCurrent();
+                this.addLog("已中断播放");
+                this.updateStatus("idle");
+                this.sendPlaybackStatus('interrupted', 0);
             }
         }
 
@@ -1506,7 +1625,6 @@
                 this.source = null;
                 this.stream = null;
                 this.isRecording = false;
-                this.log = document.getElementById('logContainer');
 
                 // 配置参数
                 this.inputSampleRate = 48000;  // 大多数浏览器默认采样率
@@ -1514,11 +1632,7 @@
             }
 
             addLog(message) {
-                const entry = document.createElement('div');
-                entry.className = 'log-entry';
-                entry.textContent = `[录音器] ${new Date().toLocaleTimeString()}: ${message}`;
-                this.log.appendChild(entry);
-                this.log.scrollTop = this.log.scrollHeight;
+                addLog(`[录音器] ${message}`, 'info');
             }
 
             // 采样率转换（降采样）
@@ -1569,19 +1683,37 @@
                     }
 
                     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    // 使用全局 AudioContext 以确保状态一致且绕过自动播放限制
+                    this.audioContext = initAudioContext();
+
+                    if (this.audioContext.state === 'suspended') {
+                        await this.audioContext.resume();
+                        this.addLog("音频上下文已从暂停中恢复");
+                    }
+
+                    this.addLog(`采样率: ${this.audioContext.sampleRate}Hz`);
 
                     // 连接麦克风流
                     this.source = this.audioContext.createMediaStreamSource(this.stream);
+                    
+                    // 连接到全局分析器
+                    this.source.connect(globalAnalyser);
 
-                    // 处理节点，bufferSize 可以是 256、512、1024、2048、4096、8192、16384
+                    // 处理节点
                     const bufferSize = 4096;
                     this.processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
 
+                    let frameCount = 0;
+                    let hasReceivedFirstFrame = false;
                     this.processor.onaudioprocess = (e) => {
                         if (!this.isRecording) return;
+                        
+                        if (!hasReceivedFirstFrame) {
+                            this.addLog("收到首帧音频输入，正在处理...");
+                            hasReceivedFirstFrame = true;
+                        }
 
-                        let inputData = e.inputBuffer.getChannelData(0); // Float32Array
+                        let inputData = e.inputBuffer.getChannelData(0); 
 
                         // 先降采样到16kHz
                         let downsampledBuffer = this.downsampleBuffer(inputData, this.audioContext.sampleRate, this.outputSampleRate);
@@ -1592,7 +1724,12 @@
                         // 发送二进制数据
                         if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                             this.websocket.send(int16Buffer.buffer);
-                            // this.addLog(`发送PCM数据: ${int16Buffer.byteLength}字节`);
+                            
+                            // 每发送 100 帧记录一次日志，避免刷屏但能确认在运行
+                            frameCount++;
+                            if (frameCount % 100 === 0) {
+                                this.addLog(`正在传输语音数据... (已发送 ${frameCount} 帧)`, 'debug');
+                            }
                         }
                     };
 
@@ -1636,6 +1773,9 @@
 
 
         startBtn.addEventListener('click', async () => {
+            // 在用户交互时初始化音频上下文，解决自动播放限制
+            initAudioContext();
+            
             isManuallyStopped = false;
             reconnectAttempts = 0;
             if (websocket) {
@@ -1665,12 +1805,9 @@
             }
         });
 
-        // 日志切换按钮事件
-        logToggle.addEventListener('click', toggleLogs);
-
         // 初始化日志
         addLog("系统初始化完成");
-        addLog("日志面板默认隐藏，点击右下角按钮显示", 'system');
+        addLog("欢迎使用百聆 (BaiLing)", 'system');
 
         // 模拟初始对话数据
         setTimeout(() => {
