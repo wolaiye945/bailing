@@ -1682,7 +1682,13 @@
                         throw new Error("浏览器不支持麦克风访问或由于非安全上下文被禁用");
                     }
 
-                    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    this.stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        } 
+                    });
                     // 使用全局 AudioContext 以确保状态一致且绕过自动播放限制
                     this.audioContext = initAudioContext();
 
@@ -1733,9 +1739,13 @@
                         }
                     };
 
-                    // 连接处理节点到输出（避免垃圾收集）
+                    // 连接处理节点
+                    // 使用 GainNode 并设为 0 以防止在某些浏览器中 onaudioprocess 不触发，同时避免回音
                     this.source.connect(this.processor);
-                    this.processor.connect(this.audioContext.destination);
+                    const silentGain = this.audioContext.createGain();
+                    silentGain.gain.value = 0;
+                    this.processor.connect(silentGain);
+                    silentGain.connect(this.audioContext.destination);
 
                     this.isRecording = true;
                     this.addLog("录音已启动（PCM采样）");
@@ -1760,8 +1770,8 @@
                     this.source.disconnect();
                     this.source = null;
                 }
+                // 不要关闭共享的 audioContext，只需断开连接即可
                 if (this.audioContext) {
-                    this.audioContext.close();
                     this.audioContext = null;
                 }
                 if (this.stream) {
