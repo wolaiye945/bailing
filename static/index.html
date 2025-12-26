@@ -439,30 +439,40 @@
             header { padding: 15px 20px; }
             header .logo span { font-size: 1.2rem; }
             
-            .avatar-container { width: 200px; height: 200px; }
-            body.has-dialogue .avatar-container { top: 80px; transform: translate(-50%, 0) scale(0.5); }
+            .avatar-container { width: 320px; height: 320px; }
+            body.has-dialogue .avatar-container { 
+                top: 60px; 
+                transform: translate(-50%, 0) scale(0.6); 
+                opacity: 0.8;
+            }
             
-            #dialogue-container { padding: 100px 15px 160px; }
-            .message { max-width: 92%; padding: 12px 18px; font-size: 1rem; }
+            #dialogue-container { 
+                padding-top: 180px; 
+                padding-bottom: 100px;
+                background: rgba(255, 255, 255, 0.95);
+            }
+            
+            .message { max-width: 95%; padding: 12px 16px; font-size: 0.95rem; }
             
             .controls-bar { 
-                width: calc(100% - 30px); 
+                width: 90%; 
                 bottom: 20px; 
-                padding: 8px 15px;
-                gap: 10px;
+                padding: 10px 20px;
+                gap: 15px;
+                justify-content: center;
             }
-            .control-btn { width: 45px; height: 45px; font-size: 1.1rem; }
-            .control-btn.main-action { width: 55px; height: 55px; }
+            .control-btn { width: 48px; height: 48px; font-size: 1.2rem; }
+            .control-btn.main-action { width: 60px; height: 60px; }
             
             .side-actions { 
-                right: 15px; 
-                bottom: 100px; 
-                gap: 10px;
+                right: 10px; 
+                bottom: 110px; 
+                gap: 8px;
             }
-            .side-btn { width: 40px; height: 40px; }
+            .side-btn { width: 38px; height: 38px; }
             
             .drawer { width: 100%; right: -100%; padding: 20px; }
-            .modal-container { width: 95%; margin: 10px auto; height: 95vh; padding: 15px; border-radius: 16px; }
+            .modal-container { width: 98%; margin: 5px auto; height: 98vh; padding: 10px; border-radius: 12px; }
         }
     </style>
 </head>
@@ -682,6 +692,8 @@
                     return;
                 }
                 this.state = 'idle'; 
+                this.width = 300;
+                this.height = 300;
                 this.baseRadius = 70;
                 this.targetBaseRadius = 70;
                 this.hue = 220; 
@@ -711,22 +723,29 @@
                 this.canvas.width = this.width * dpr;
                 this.canvas.height = this.height * dpr;
                 this.ctx.scale(dpr, dpr);
+
+                // 根据画布大小动态调整基础半径
+                // 默认 300px 下基础半径为 70
+                const scale = this.width / 300;
+                this.baseRadius = 70 * scale;
+                this.targetBaseRadius = this.baseRadius;
             }
 
             setState(state) {
                 this.state = state;
+                const scale = this.width / 300;
                 if (state === 'listening') {
                     this.targetHue = 210; // 亮蓝色
-                    this.targetBaseRadius = 80;
+                    this.targetBaseRadius = 80 * scale;
                 } else if (state === 'thinking') {
                     this.targetHue = 280; // 紫色
-                    this.targetBaseRadius = 75;
+                    this.targetBaseRadius = 75 * scale;
                 } else if (state === 'speaking') {
                     this.targetHue = 30;  // 温暖的橙色
-                    this.targetBaseRadius = 85;
+                    this.targetBaseRadius = 85 * scale;
                 } else {
                     this.targetHue = 220; // 柔和蓝
-                    this.targetBaseRadius = 70;
+                    this.targetBaseRadius = 70 * scale;
                 }
             }
 
@@ -752,6 +771,7 @@
                 
                 const time = Date.now() * 0.0015;
                 const isVeryIdle = this.state === 'idle' && !hasAudio;
+                const scale = this.width / 300;
                 
                 // 1. 绘制中心柔光背景 (Glow Foundation)
                 const bgGradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, this.baseRadius * 2);
@@ -767,12 +787,12 @@
                 // 2. 绘制多层波纹
                 this.layers.forEach((layer, lIdx) => {
                     this.ctx.beginPath();
-                    this.ctx.lineWidth = isVeryIdle ? layer.width * 0.7 : layer.width;
+                    this.ctx.lineWidth = (isVeryIdle ? layer.width * 0.7 : layer.width) * scale;
                     const alpha = isVeryIdle ? layer.opacity * 0.4 : layer.opacity;
                     this.ctx.strokeStyle = `hsla(${this.hue}, 90%, 70%, ${alpha})`;
                     
                     // 添加发光效果
-                    this.ctx.shadowBlur = isVeryIdle ? 5 : 15;
+                    this.ctx.shadowBlur = (isVeryIdle ? 5 : 15) * scale;
                     this.ctx.shadowColor = `hsla(${this.hue}, 90%, 70%, ${alpha})`;
 
                     for (let i = 0; i <= this.pointCount; i++) {
@@ -806,14 +826,19 @@
                             wave = Math.sin(angle * 3 + phaseShift) * 3 + Math.cos(angle * 2 + phaseShift * 0.5) * 2;
                         }
 
-                        const radius = this.baseRadius + wave + (val * 60 * (1 - lIdx * 0.2));
-                        const x = centerX + Math.cos(angle) * radius;
-                        const y = centerY + Math.sin(angle) * radius;
+                        // 缩放 wave 和音频增量
+                        const radius = this.baseRadius + (wave * scale) + (val * 60 * scale * (1 - lIdx * 0.2));
+                        
+                        // 边界保护：确保 radius 不超过画布的一半（带一点边距）
+                        const maxAllowedRadius = (Math.min(this.width, this.height) / 2) - 5;
+                        const finalRadius = Math.min(radius, maxAllowedRadius);
+
+                        const x = centerX + Math.cos(angle) * finalRadius;
+                        const y = centerY + Math.sin(angle) * finalRadius;
 
                         if (i === 0) {
                             this.ctx.moveTo(x, y);
                         } else {
-                            // 使用 quadraticCurveTo 可能会更平滑，但 lineTo 在点数够多时效果也不错
                             this.ctx.lineTo(x, y);
                         }
                     }
@@ -829,11 +854,16 @@
                 for (let i = 0; i < pCount; i++) {
                     const pSpeed = (0.1 + (i % 3) * 0.05);
                     const pAngle = (time * pSpeed) + (i / pCount) * Math.PI * 2;
-                    const pDist = this.baseRadius + 50 + Math.sin(time * 0.5 + i) * 10;
-                    const px = centerX + Math.cos(pAngle) * pDist;
-                    const py = centerY + Math.sin(pAngle) * pDist;
+                    const pDist = this.baseRadius + (50 * scale) + Math.sin(time * 0.5 + i) * (10 * scale);
                     
-                    const pSize = Math.sin(time + i) * 1 + 1.5;
+                    // 同样对微粒位置做边界保护
+                    const maxAllowedDist = (Math.min(this.width, this.height) / 2) - 10;
+                    const finalDist = Math.min(pDist, maxAllowedDist);
+                    
+                    const px = centerX + Math.cos(pAngle) * finalDist;
+                    const py = centerY + Math.sin(pAngle) * finalDist;
+                    
+                    const pSize = (Math.sin(time + i) * 1 + 1.5) * scale;
                     this.ctx.beginPath();
                     this.ctx.arc(px, py, pSize, 0, Math.PI * 2);
                     this.ctx.fillStyle = `hsla(${this.hue}, 80%, 80%, ${isVeryIdle ? 0.15 : 0.4})`;
@@ -841,7 +871,7 @@
                     
                     // 微粒也带一点发光
                     if (!isVeryIdle) {
-                        this.ctx.shadowBlur = 10;
+                        this.ctx.shadowBlur = 10 * scale;
                         this.ctx.shadowColor = `hsla(${this.hue}, 80%, 80%, 0.5)`;
                     }
                 }
@@ -1545,7 +1575,7 @@
                     
                     // 连接到分析器，再连接到输出
                     source.connect(globalAnalyser);
-                    globalAnalyser.connect(this.audioContext.destination);
+                    source.connect(this.audioContext.destination);
                     
                     this.source = source;
 
