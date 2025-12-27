@@ -22,7 +22,8 @@ from bailing import (
     llm,
     tts,
     vad,
-    memory
+    memory,
+    noise_reduction
 )
 from bailing.dialogue import Message, Dialogue
 from bailing.utils import is_interrupt, read_config, is_segment, extract_json_from_string, is_segment_sentence, remove_think_tags, format_think_sections
@@ -82,6 +83,11 @@ class Robot(ABC):
         self.player = player.create_instance(
             config["selected_module"]["Player"],
             config["Player"][config["selected_module"]["Player"]]
+        )
+
+        logger.info("初始化 Noise Reduction...")
+        self.nr = noise_reduction.create_instance(
+            config.get("NoiseReduction", {"enabled": False})
         )
 
         # 事件用于控制程序退出
@@ -161,6 +167,24 @@ class Robot(ABC):
             self.player.init(websocket, loop)
             self.listen_dialogue(self.player.send_messages)
 
+    def _is_noise_text(self, text):
+        """判断识别出的文本是否是噪声或无意义的短语"""
+        if not text:
+            return True
+        text = text.strip()
+        # 1. 长度过滤：如果只有1个字符，且不是常用指令，则认为是噪声
+        if len(text) <= 1:
+            # 允许一些单字指令，如“喂”、“在”、“好”、“嗯”
+            if text not in ["喂", "在", "好", "嗯"]:
+                return True
+        
+        # 2. 常见 ASR 误识别噪声过滤
+        noise_patterns = ["。", "？", "！", "...", "啊", "呃", "哦", "吧"]
+        if text in noise_patterns:
+            return True
+            
+        return False
+
     def listen_dialogue(self, callback):
         self.callback = callback
 
@@ -170,6 +194,11 @@ class Robot(ABC):
                 try:
                     # 使用 timeout 允许检查 stop_event
                     data = self.audio_queue.get(timeout=1.0)
+                    
+                    # 算法降噪处理
+                    if self.nr.enabled:
+                        data = self.nr.process(data)
+                    
                     vad_statue = self.vad.is_vad(data)
                     self.vad_queue.put({"voice": data, "vad_statue": vad_statue})
                 except queue.Empty:
@@ -317,6 +346,14 @@ class Robot(ABC):
                 self.vad_start = True
                 self.speech.append(data)
         elif "end" in vad_status:
+            if vad_status.get("cancel"):
+                logger.info("VAD 判定为噪声，取消本次识别")
+                self.vad_start = False
+                self.speech = []
+                if hasattr(self.player, 'send_status'):
+                    self.player.send_status("idle")
+                return
+
             if len(self.speech) > 0:
                 logger.info(f"检测到说话结束，异步启动 ASR 识别 (语音包长度: {len(self.speech)})")
                 self.vad_start = False
@@ -337,6 +374,14 @@ class Robot(ABC):
                             return
                         
                         logger.info(f"ASR 识别成功: {text}")
+                        
+                        # 智能过滤噪声文本 (Phase 2 EOQ lite)
+                        if self._is_noise_text(text):
+                            logger.info(f"检测到疑似噪声文本: '{text}'，跳过处理。")
+                            if hasattr(self.player, 'send_status'):
+                                self.player.send_status("idle")
+                            return
+
                         if hasattr(self.player, 'send_status'):
                             self.player.send_status("thinking")
                         if self.callback:
@@ -395,6 +440,14 @@ class Robot(ABC):
         return tts_file
 
     def chat_tool(self, query, depth=0, session_id=None):
+        # 智能意图判断 (EOQ Lite)
+        # 如果 query 只有 1-2 个字，且不是常用指令，则可能是误触发
+        common_cmds = ["好", "行", "对", "不", "开", "关", "喂", "嗨"]
+        if len(query) <= 1 and query not in common_cmds:
+            logger.info(f"EOQ Lite: 检测到极短非指令输入 '{query}'，判定为误触发，不予响应")
+            self.chat_lock = False
+            return []
+
         # 限制递归深度，防止死循环
         if depth > 5:
             logger.error("达到最大工具调用深度，停止递归")

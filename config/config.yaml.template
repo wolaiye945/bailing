@@ -51,6 +51,11 @@ VAD:
     sampling_rate: 16000
     threshold: 0.8
     min_silence_duration_ms: 800  # 如果说话停顿比较长，可以把这个值设置大一些
+  FunASRVAD:
+    model_dir: iic/speech_fsmn_vad_zh-cn-16k-common-pytorch
+    sampling_rate: 16000
+    threshold: 0.5
+    max_single_segment_time: 30000
 
 LLM:
   OpenAILLM:
