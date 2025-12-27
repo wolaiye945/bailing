@@ -23,8 +23,20 @@ Security:
       role: user
 
 interrupt: true
+# 降噪配置
+NoiseReduction:
+  enabled: true
+  sample_rate: 16000
+  control: 20
 # 是否开启工具调用
 StartTaskMode: true
+# 智能意图截断 (EOQ) 配置
+EOQ:
+  enabled: true
+  min_length: 2
+  common_cmds: ["好", "行", "对", "不", "开", "关", "喂", "嗨", "在", "嗯"]
+  filler_words: ["啊", "呢", "吧", "哦", "哒", "额", "呃", "哎", "就"]
+  llm_judge: false # 暂不开启 LLM 语义判断，优先保证响应速度
 # 具体处理时选择的模块
 selected_module:
   Recorder: WebSocketRecorder
@@ -123,3 +135,11 @@ TaskManager:
   enabled: true
   functions_call_name: plugins/function_calls_config.json
   aigc_manus_enabled: false
+
+# 智能意图截断 (EOQ) 配置
+EOQ:
+  enabled: true
+  min_length: 2
+  common_cmds: ["好", "行", "对", "不", "开", "关", "喂", "嗨", "在", "嗯"]
+  filler_words: ["啊", "呢", "吧", "哦", "哒", "额", "呃", "哎", "就"]
+  llm_judge: false # 暂不开启 LLM 语义判断，优先保证响应速度

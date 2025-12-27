@@ -14,6 +14,7 @@ try:
             dummy_data = np.zeros((1, 1600), dtype=np.int16)
             for speech_prob, denoised_audio in denoiser.denoise_chunk(dummy_data):
                 print(f"16kHz Speech probability: {speech_prob}")
+                print(f"Denoised audio type: {denoised_audio.dtype}")
                 break
             print("16kHz Test passed!")
 

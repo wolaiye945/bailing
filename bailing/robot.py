@@ -107,6 +107,9 @@ class Robot(ABC):
         self.task_queue = queue.Queue()
         self.task_manager = TaskManager(config.get("TaskManager"), self.task_queue)
         self.start_task_mode = config.get("StartTaskMode")
+        
+        # 初始化 EOQ 配置
+        self.eoq_config = config.get("EOQ", {"enabled": False})
 
         memory_config = config.get("Memory", {}).copy()
         if memory_config and memory_config.get("enabled", True):
@@ -167,23 +170,45 @@ class Robot(ABC):
             self.player.init(websocket, loop)
             self.listen_dialogue(self.player.send_messages)
 
-    def _is_noise_text(self, text):
-        """判断识别出的文本是否是噪声或无意义的短语"""
-        if not text:
-            return True
-        text = text.strip()
-        # 1. 长度过滤：如果只有1个字符，且不是常用指令，则认为是噪声
-        if len(text) <= 1:
-            # 允许一些单字指令，如“喂”、“在”、“好”、“嗯”
-            if text not in ["喂", "在", "好", "嗯"]:
-                return True
-        
-        # 2. 常见 ASR 误识别噪声过滤
-        noise_patterns = ["。", "？", "！", "...", "啊", "呃", "哦", "吧"]
-        if text in noise_patterns:
+    def _is_meaningful_query(self, query):
+        """
+        智能意图判断 (EOQ): 判断 query 是否是一个有意义的对话输入
+        返回 True 表示有意义，需要处理；返回 False 表示无意义，应忽略。
+        """
+        if not self.eoq_config.get("enabled", True):
             return True
             
-        return False
+        if not query:
+            return False
+            
+        clean_query = query.strip().replace(" ", "").replace("。", "").replace("，", "").replace("？", "").replace("！", "")
+        
+        # 1. 检查是否在常用指令列表中
+        common_cmds = self.eoq_config.get("common_cmds", [])
+        if clean_query in common_cmds:
+            return True
+            
+        # 2. 检查长度
+        min_len = self.eoq_config.get("min_length", 2)
+        if len(clean_query) < min_len:
+            logger.info(f"EOQ: 输入太短 ({query})，且不在常用指令中，判定为误触发")
+            return False
+            
+        # 3. 检查是否全是语气词/填充词
+        filler_words = self.eoq_config.get("filler_words", [])
+        is_all_fillers = True
+        for char in clean_query:
+            if char not in filler_words:
+                is_all_fillers = False
+                break
+        if is_all_fillers:
+            logger.info(f"EOQ: 输入仅含填充词 ({query})，判定为误触发")
+            return False
+            
+        # 4. 上下文感知 (进阶)：如果机器人正在等待输入，则更倾向于认为是有效的
+        # 这里可以根据 self.player.get_playing_status() 或对话历史状态来判断
+        
+        return True
 
     def listen_dialogue(self, callback):
         self.callback = callback
@@ -375,9 +400,8 @@ class Robot(ABC):
                         
                         logger.info(f"ASR 识别成功: {text}")
                         
-                        # 智能过滤噪声文本 (Phase 2 EOQ lite)
-                        if self._is_noise_text(text):
-                            logger.info(f"检测到疑似噪声文本: '{text}'，跳过处理。")
+                        # 智能意图判断 (EOQ)
+                        if not self._is_meaningful_query(text):
                             if hasattr(self.player, 'send_status'):
                                 self.player.send_status("idle")
                             return
@@ -440,11 +464,8 @@ class Robot(ABC):
         return tts_file
 
     def chat_tool(self, query, depth=0, session_id=None):
-        # 智能意图判断 (EOQ Lite)
-        # 如果 query 只有 1-2 个字，且不是常用指令，则可能是误触发
-        common_cmds = ["好", "行", "对", "不", "开", "关", "喂", "嗨"]
-        if len(query) <= 1 and query not in common_cmds:
-            logger.info(f"EOQ Lite: 检测到极短非指令输入 '{query}'，判定为误触发，不予响应")
+        # 智能意图判断 (EOQ)
+        if not self._is_meaningful_query(query):
             self.chat_lock = False
             return []
 
