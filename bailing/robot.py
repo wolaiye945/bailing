@@ -152,7 +152,9 @@ class Robot(ABC):
         self.dialogue = Dialogue(memory_config.get("dialogue_history_path", "tmp/dialogue"))
         self.dialogue.put(Message(role="system", content=self.prompt))
 
-        self.vad_start = True
+        self.vad_start = False
+        self.vad.reset_states() # 显式重置 VAD 状态，防止旧状态干扰
+        self.connect_time = time.time() # 记录连接时间，用于过滤启动初期的噪声
 
         # 打断相关配置
         self.INTERRUPT = config["interrupt"]
@@ -329,6 +331,12 @@ class Robot(ABC):
                 self.vad.set_threshold(self.echo_config.get("threshold_playing", 0.95))
             else:
                 self.vad.set_threshold(self.vad.original_threshold)
+
+        # 忽略连接初期的 VAD 信号，防止启动时的电磁噪声或模型初始化波动导致误触发
+        if time.time() - self.connect_time < 0.5:
+            if vad_status:
+                logger.debug(f"忽略连接初期的 VAD 信号: {vad_status}")
+            return True
 
         # 识别到vad开始
         if self.vad_start:
