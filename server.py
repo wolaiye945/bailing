@@ -377,6 +377,14 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...), co
                 break
 
             if "bytes" in msg:
+                # 记录收到的音频数据，但不频繁打印以避免刷屏
+                # 可以在每收到 100 次二进制消息时打印一次日志
+                if not hasattr(websocket, "_recv_count"):
+                    websocket._recv_count = 0
+                websocket._recv_count += 1
+                if websocket._recv_count % 100 == 0:
+                    logger.debug(f"WebSocket 收到二进制数据包: count={websocket._recv_count}, size={len(msg['bytes'])} bytes")
+                
                 robot_instance.recorder.put_audio(msg["bytes"])
             elif "text" in msg:
                 logger.info(f"收到请求: {msg['text']}")
@@ -387,6 +395,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...), co
                             robot_instance.player.set_playing_status(True)
                         else:
                             robot_instance.player.set_playing_status(False)
+                    elif msg_js.get("type") == "playback_finished":
+                        # 处理前端返回的播放完成信号
+                        if hasattr(robot_instance.player, "_playback_finished_event"):
+                            robot_instance.player._playback_finished_event.set()
+                            logger.debug(f"收到前端播放完成确认: conn_id={connection_id}")
                     else:
                         logger.warning(f"未知指令类型: {msg_js.get('type')}")
                 except json.JSONDecodeError:

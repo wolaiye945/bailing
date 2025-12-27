@@ -234,7 +234,9 @@ class Robot(ABC):
 
     def interrupt_playback(self):
         """中断当前的语音播放"""
-        logger.info("Interrupting current playback.")
+        if not self.INTERRUPT:
+            return
+        logger.info(f"!!! 打断播放器 !!! (User: {self.user_info['username']}, Session: {self.chat_session_id})")
         self.player.stop()
         # 清空 tts 队列，防止旧的 segment 在打断后继续播放
         with self.tts_queue.mutex:
@@ -377,9 +379,10 @@ class Robot(ABC):
         if text is None or len(text)<=0:
             logger.info(f"无需tts转换，query为空，{text}")
             return None
-        logger.info(f"开始 TTS 转换 (User: {self.user_info['username']}): {text}")
+        logger.info(f"--- speak_and_play START: {text[:50]}... ---")
         try:
             tts_file = self.tts.to_tts(text, username=self.user_info['username'])
+            logger.info(f"--- speak_and_play TTS DONE: {tts_file} ---")
         except Exception as e:
             logger.error(f"TTS 转换抛出异常: {e}", exc_info=True)
             return None

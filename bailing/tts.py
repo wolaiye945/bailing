@@ -28,23 +28,42 @@ class AbstractTTS(ABC):
         pass
 
     def _generate_filename(self, output_file, extension=".wav", username=None):
-        # 确保 tmp 目录存在
-        tmp_dir = output_file if output_file else "tmp"
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
+        # 确保基础输出目录存在
+        # output_file 可能是 config 中的 'tmp/'
+        base_output = output_file if output_file else "tmp"
+        
+        # 处理可能的相对路径
+        if not os.path.isabs(base_output):
+            # 获取项目根目录（假设 tts.py 在 bailing 目录下）
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            base_output = os.path.join(project_root, base_output)
+            
+        if not os.path.exists(base_output):
+            try:
+                os.makedirs(base_output, exist_ok=True)
+            except Exception as e:
+                logger.error(f"创建基础目录失败: {base_output}, error: {e}")
         
         # 使用用户特定的子目录（如果提供了用户名）
-        base_dir = tmp_dir
+        user_dir = base_output
         if username:
-            base_dir = os.path.join(tmp_dir, username)
-            if not os.path.exists(base_dir):
-                os.makedirs(base_dir)
+            user_dir = os.path.join(base_output, username)
+            if not os.path.exists(user_dir):
+                try:
+                    os.makedirs(user_dir, exist_ok=True)
+                    logger.info(f"创建用户目录: {user_dir}")
+                except Exception as e:
+                    logger.error(f"创建用户目录失败: {user_dir}, error: {e}")
 
         # 使用日期子目录
         date_str = time.strftime("%Y-%m-%d")
-        date_dir = os.path.join(base_dir, date_str)
+        date_dir = os.path.join(user_dir, date_str)
         if not os.path.exists(date_dir):
-            os.makedirs(date_dir)
+            try:
+                os.makedirs(date_dir, exist_ok=True)
+                logger.info(f"创建日期目录: {date_dir}")
+            except Exception as e:
+                logger.error(f"创建日期目录失败: {date_dir}, error: {e}")
             
         return os.path.join(date_dir, f"tts-{uuid.uuid4().hex}{extension}")
 
@@ -124,14 +143,33 @@ class EdgeTTS(AbstractTTS):
         await communicate.save(output_file)
 
     def to_tts(self, text, username=None):
-        tmpfile = self._generate_filename(self.output_file, ".wav", username)
+        tmpfile = self._generate_filename(self.output_file, ".mp3", username)
         start_time = time.time()
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                # 尝试使用 edge-tts 生成音频
+                asyncio.run(self.text_to_speak(text, tmpfile))
+                self._log_execution_time(start_time)
+                return tmpfile
+            except Exception as e:
+                logger.warning(f"EdgeTTS attempt {attempt + 1} failed: {e}")
+                if "403" in str(e):
+                    # 如果是 403 错误，尝试等待一下再重试
+                    time.sleep(1)
+                    continue
+                break
+        
+        # 如果 EdgeTTS 最终失败，尝试备选方案 GTTS
+        logger.info("EdgeTTS failed, falling back to GTTS...")
         try:
-            asyncio.run(self.text_to_speak(text, tmpfile))
-            self._log_execution_time(start_time)
+            from gtts import gTTS
+            tts = gTTS(text=text, lang='zh')
+            tts.save(tmpfile)
+            logger.info(f"Fallback to GTTS successful: {tmpfile}")
             return tmpfile
-        except Exception as e:
-            logger.info(f"Failed to generate TTS file: {e}")
+        except Exception as fallback_e:
+            logger.error(f"Fallback to GTTS also failed: {fallback_e}")
             return None
 
 
