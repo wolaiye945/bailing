@@ -22,7 +22,8 @@ from bailing import (
     llm,
     tts,
     vad,
-    memory
+    memory,
+    noise_reduction
 )
 from bailing.dialogue import Message, Dialogue
 from bailing.utils import is_interrupt, read_config, is_segment, extract_json_from_string, is_segment_sentence, remove_think_tags, format_think_sections
@@ -84,6 +85,11 @@ class Robot(ABC):
             config["Player"][config["selected_module"]["Player"]]
         )
 
+        logger.info("初始化 Noise Reduction...")
+        self.nr = noise_reduction.create_instance(
+            config.get("NoiseReduction", {"enabled": False})
+        )
+
         # 事件用于控制程序退出
         self.stop_event = threading.Event()
         # 线程锁与会话管理
@@ -101,6 +107,9 @@ class Robot(ABC):
         self.task_queue = queue.Queue()
         self.task_manager = TaskManager(config.get("TaskManager"), self.task_queue)
         self.start_task_mode = config.get("StartTaskMode")
+        
+        # 初始化 EOQ 配置
+        self.eoq_config = config.get("EOQ", {"enabled": False})
 
         memory_config = config.get("Memory", {}).copy()
         if memory_config and memory_config.get("enabled", True):
@@ -143,7 +152,9 @@ class Robot(ABC):
         self.dialogue = Dialogue(memory_config.get("dialogue_history_path", "tmp/dialogue"))
         self.dialogue.put(Message(role="system", content=self.prompt))
 
-        self.vad_start = True
+        self.vad_start = False
+        self.vad.reset_states() # 显式重置 VAD 状态，防止旧状态干扰
+        self.connect_time = time.time() # 记录连接时间，用于过滤启动初期的噪声
 
         # 打断相关配置
         self.INTERRUPT = config["interrupt"]
@@ -161,6 +172,46 @@ class Robot(ABC):
             self.player.init(websocket, loop)
             self.listen_dialogue(self.player.send_messages)
 
+    def _is_meaningful_query(self, query):
+        """
+        智能意图判断 (EOQ): 判断 query 是否是一个有意义的对话输入
+        返回 True 表示有意义，需要处理；返回 False 表示无意义，应忽略。
+        """
+        if not self.eoq_config.get("enabled", True):
+            return True
+            
+        if not query:
+            return False
+            
+        clean_query = query.strip().replace(" ", "").replace("。", "").replace("，", "").replace("？", "").replace("！", "")
+        
+        # 1. 检查是否在常用指令列表中
+        common_cmds = self.eoq_config.get("common_cmds", [])
+        if clean_query in common_cmds:
+            return True
+            
+        # 2. 检查长度
+        min_len = self.eoq_config.get("min_length", 2)
+        if len(clean_query) < min_len:
+            logger.info(f"EOQ: 输入太短 ({query})，且不在常用指令中，判定为误触发")
+            return False
+            
+        # 3. 检查是否全是语气词/填充词
+        filler_words = self.eoq_config.get("filler_words", [])
+        is_all_fillers = True
+        for char in clean_query:
+            if char not in filler_words:
+                is_all_fillers = False
+                break
+        if is_all_fillers:
+            logger.info(f"EOQ: 输入仅含填充词 ({query})，判定为误触发")
+            return False
+            
+        # 4. 上下文感知 (进阶)：如果机器人正在等待输入，则更倾向于认为是有效的
+        # 这里可以根据 self.player.get_playing_status() 或对话历史状态来判断
+        
+        return True
+
     def listen_dialogue(self, callback):
         self.callback = callback
 
@@ -170,6 +221,11 @@ class Robot(ABC):
                 try:
                     # 使用 timeout 允许检查 stop_event
                     data = self.audio_queue.get(timeout=1.0)
+                    
+                    # 算法降噪处理
+                    if self.nr.enabled:
+                        data = self.nr.process(data)
+                    
                     vad_statue = self.vad.is_vad(data)
                     self.vad_queue.put({"voice": data, "vad_statue": vad_statue})
                 except queue.Empty:
@@ -276,6 +332,12 @@ class Robot(ABC):
             else:
                 self.vad.set_threshold(self.vad.original_threshold)
 
+        # 忽略连接初期的 VAD 信号，防止启动时的电磁噪声或模型初始化波动导致误触发
+        if time.time() - self.connect_time < 0.5:
+            if vad_status:
+                logger.debug(f"忽略连接初期的 VAD 信号: {vad_status}")
+            return True
+
         # 识别到vad开始
         if self.vad_start:
             self.speech.append(data)
@@ -317,6 +379,14 @@ class Robot(ABC):
                 self.vad_start = True
                 self.speech.append(data)
         elif "end" in vad_status:
+            if vad_status.get("cancel"):
+                logger.info("VAD 判定为噪声，取消本次识别")
+                self.vad_start = False
+                self.speech = []
+                if hasattr(self.player, 'send_status'):
+                    self.player.send_status("idle")
+                return
+
             if len(self.speech) > 0:
                 logger.info(f"检测到说话结束，异步启动 ASR 识别 (语音包长度: {len(self.speech)})")
                 self.vad_start = False
@@ -337,6 +407,13 @@ class Robot(ABC):
                             return
                         
                         logger.info(f"ASR 识别成功: {text}")
+                        
+                        # 智能意图判断 (EOQ)
+                        if not self._is_meaningful_query(text):
+                            if hasattr(self.player, 'send_status'):
+                                self.player.send_status("idle")
+                            return
+
                         if hasattr(self.player, 'send_status'):
                             self.player.send_status("thinking")
                         if self.callback:
@@ -395,6 +472,11 @@ class Robot(ABC):
         return tts_file
 
     def chat_tool(self, query, depth=0, session_id=None):
+        # 智能意图判断 (EOQ)
+        if not self._is_meaningful_query(query):
+            self.chat_lock = False
+            return []
+
         # 限制递归深度，防止死循环
         if depth > 5:
             logger.error("达到最大工具调用深度，停止递归")

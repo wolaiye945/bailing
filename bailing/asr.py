@@ -100,6 +100,19 @@ class FunASR(ASR):
             )
 
             text = rich_transcription_postprocess(res[0]["text"])
+            
+            # 智能过滤 ASR 结果
+            # 1. 过滤 nospeech 标签
+            if "<|nospeech|>" in text:
+                logger.info("ASR 识别为无意义噪声 (nospeech)，过滤")
+                return None, tmpfile
+            
+            # 2. 过滤纯标点符号或极短内容
+            clean_text = text.replace(" ", "").replace("。", "").replace("，", "").replace("？", "").replace("！", "")
+            if not clean_text or len(clean_text) <= 1:
+                logger.info(f"ASR 识别结果太短或仅含标点 ({text})，判定为误触发并过滤")
+                return None, tmpfile
+
             logger.info(f"识别文本: {text}")
             return text, tmpfile
 
