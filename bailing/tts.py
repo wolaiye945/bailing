@@ -27,6 +27,11 @@ class AbstractTTS(ABC):
     def to_tts(self, text, username=None):
         pass
 
+    @abstractmethod
+    async def to_tts_stream(self, text):
+        """Return audio bytes directly"""
+        pass
+
     def _generate_filename(self, output_file, extension=".wav", username=None):
         # 确保基础输出目录存在
         # output_file 可能是 config 中的 'tmp/'
@@ -90,6 +95,17 @@ class GTTS(AbstractTTS):
             logger.debug(f"生成TTS文件失败: {e}")
             return None
 
+    async def to_tts_stream(self, text):
+        import io
+        try:
+            tts = gTTS(text=text, lang=self.lang)
+            fp = io.BytesIO()
+            tts.write_to_fp(fp)
+            return fp.getvalue()
+        except Exception as e:
+            logger.error(f"GTTS stream conversion failed: {e}")
+            return None
+
 
 class MacTTS(AbstractTTS):
     """
@@ -141,6 +157,16 @@ class EdgeTTS(AbstractTTS):
     async def text_to_speak(self, text, output_file):
         communicate = edge_tts.Communicate(text, voice=self.voice)  # Use your preferred voice
         await communicate.save(output_file)
+
+    async def to_tts_stream(self, text):
+        """Return audio bytes directly"""
+        import io
+        communicate = edge_tts.Communicate(text, voice=self.voice)
+        audio_data = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data += chunk["data"]
+        return audio_data
 
     def to_tts(self, text, username=None):
         tmpfile = self._generate_filename(self.output_file, ".mp3", username)
@@ -205,6 +231,7 @@ class CHATTTS(AbstractTTS):
             )
             # Ensure the audio is in int16 format and saved correctly
             audio_data = wavs[0]
+            import numpy as np
             if audio_data.dtype != np.int16:
                 if audio_data.dtype == np.float32 or audio_data.dtype == np.float64:
                     audio_data = (audio_data * 32767).astype(np.int16)
@@ -216,6 +243,37 @@ class CHATTTS(AbstractTTS):
             return tmpfile
         except Exception as e:
             logger.error(f"Failed to generate TTS file: {e}")
+            return None
+
+    async def to_tts_stream(self, text):
+        import io
+        import numpy as np
+        try:
+            params_infer_code = ChatTTS.Chat.InferCodeParams(
+                spk_emb=self.rand_spk,
+                temperature=.3,
+                top_P=0.7,
+                top_K=20,
+            )
+            params_refine_text = ChatTTS.Chat.RefineTextParams(
+                prompt='[oral_2][laugh_0][break_6]',
+            )
+            wavs = self.chat.infer(
+                [text],
+                params_refine_text=params_refine_text,
+                params_infer_code=params_infer_code,
+            )
+            audio_data = wavs[0]
+            if audio_data.dtype != np.int16:
+                if audio_data.dtype == np.float32 or audio_data.dtype == np.float64:
+                    audio_data = (audio_data * 32767).astype(np.int16)
+            
+            buffer = io.BytesIO()
+            import soundfile as sf
+            sf.write(buffer, audio_data, 24000, format='WAV', subtype='PCM_16')
+            return buffer.getvalue()
+        except Exception as e:
+            logger.error(f"CHATTTS stream conversion failed: {e}")
             return None
 
 
@@ -320,6 +378,33 @@ class KOKOROTTS(AbstractTTS):
         elif len_ps < 183:
             speed = 1.0 - (len_ps - 83) / 500.0
         return speed * 1.1
+
+    async def to_tts_stream(self, text):
+        """Return audio bytes directly as WAV"""
+        import io
+        import numpy as np
+        try:
+            generator = self.pipeline(
+                text, voice=self.voice,
+                speed=1, split_pattern=r'\n+'
+            )
+            all_audio = []
+            for gs, ps, audio in generator:
+                all_audio.append(audio.numpy())
+            
+            if all_audio:
+                combined_audio = np.concatenate(all_audio)
+                if combined_audio.dtype != np.int16:
+                    if combined_audio.dtype == np.float32 or combined_audio.dtype == np.float64:
+                        combined_audio = (combined_audio * 32767).astype(np.int16)
+                
+                buffer = io.BytesIO()
+                sf.write(buffer, combined_audio, 24000, format='WAV', subtype='PCM_16')
+                return buffer.getvalue()
+            return None
+        except Exception as e:
+            logger.error(f"KOKOROTTS to_tts_stream error: {e}")
+            return None
 
     def to_tts(self, text, username=None):
         logger.debug(f"KOKOROTTS to_tts: {text}")

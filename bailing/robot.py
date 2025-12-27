@@ -28,6 +28,7 @@ from bailing import (
 from bailing.dialogue import Message, Dialogue
 from bailing.utils import is_interrupt, read_config, is_segment, extract_json_from_string, is_segment_sentence, remove_think_tags, format_think_sections
 from bailing.prompt import sys_prompt
+from bailing.session import Session
 
 from plugins.registry import Action
 from plugins.task_manager import TaskManager
@@ -48,6 +49,7 @@ class Robot(ABC):
             
         config = read_config(config_file)
         self.audio_queue = queue.Queue()
+        self.vad_queue = queue.Queue()
 
         logger.info(f"初始化 Recorder (User: {self.user_info['username']})...")
         self.recorder = recorder.create_instance(
@@ -104,6 +106,7 @@ class Robot(ABC):
         # 启动 TTS 优先级队列处理线程
         self._tts_priority()
 
+        # 初始化任务管理器
         self.task_queue = queue.Queue()
         self.task_manager = TaskManager(config.get("TaskManager"), self.task_queue)
         self.start_task_mode = config.get("StartTaskMode")
@@ -111,46 +114,27 @@ class Robot(ABC):
         # 初始化 EOQ 配置
         self.eoq_config = config.get("EOQ", {"enabled": False})
 
-        memory_config = config.get("Memory", {}).copy()
-        if memory_config and memory_config.get("enabled", True):
-            # 为不同用户隔离 memory 和对话历史路径
-            if self.user_info['username'] != "default":
-                user_path = self.user_info['username']
-                
-                # 优化对话历史路径
-                orig_history_path = memory_config.get("dialogue_history_path", "tmp/dialogue")
-                memory_config["dialogue_history_path"] = os.path.join(orig_history_path, user_path)
-                
-                # 优化 memory 文件路径
-                orig_memory_file = memory_config.get("memory_file", "tmp/memory.json")
-                memory_dir = os.path.dirname(orig_memory_file)
-                memory_base = os.path.basename(orig_memory_file)
-                memory_config["memory_file"] = os.path.join(memory_dir, user_path, memory_base)
-                
-                # 确保目录存在
-                os.makedirs(os.path.dirname(memory_config["memory_file"]), exist_ok=True)
-                os.makedirs(memory_config["dialogue_history_path"], exist_ok=True)
-
-            self.memory = memory.Memory(memory_config)
-            self.memory_text = self.memory.get_memory()
-        else:
-            self.memory = None
-            self.memory_text = ""
-        
+        # 准备系统提示词
         current_sys_prompt = sys_prompt
-        # 如果任务管理器未启用，或者未开启任务模式，则移除工具调用相关的提示词
         if not self.task_manager.enabled or not self.start_task_mode:
-            # 移除包含 "调用工具" 或 "function_name" 的行，这些通常与工具调用说明相关
             lines = current_sys_prompt.split('\n')
             filtered_lines = [line for line in lines if "调用工具" not in line and "function_name" not in line]
             current_sys_prompt = '\n'.join(filtered_lines)
 
-        self.prompt = current_sys_prompt.replace("{memory}", self.memory_text).strip()
-
-        self.vad_queue = queue.Queue()
+        # 初始化 Session
+        self.session = Session(
+            user_info=self.user_info,
+            memory_config=config.get("Memory", {}),
+            system_prompt=current_sys_prompt
+        )
+        
+        # 保持对旧属性的引用以维持兼容性，逐步迁移
+        self.dialogue = self.session.dialogue
+        self.memory = self.session.memory
+        self.chat_session_id = self.session.session_id
+        self.chat_lock = self.session.chat_lock
+        self.prompt = self.session.prompt
         self.max_history = config.get("Memory", {}).get("max_history", 15)
-        self.dialogue = Dialogue(memory_config.get("dialogue_history_path", "tmp/dialogue"))
-        self.dialogue.put(Message(role="system", content=self.prompt))
 
         self.vad_start = False
         self.vad.reset_states() # 显式重置 VAD 状态，防止旧状态干扰
@@ -288,6 +272,11 @@ class Robot(ABC):
         tts_priority = threading.Thread(target=priority_thread, daemon=True)
         tts_priority.start()
 
+    def new_session(self):
+        self.session.new_session()
+        self.chat_session_id = self.session.session_id
+        logger.info(f"new_session id: {self.chat_session_id}")
+
     def interrupt_playback(self):
         """中断当前的语音播放"""
         if not self.INTERRUPT:
@@ -298,7 +287,7 @@ class Robot(ABC):
         with self.tts_queue.mutex:
             self.tts_queue.queue.clear()
         self.chat_lock = False # 重置 chat_lock，允许打断 LLM 生成
-        self.chat_session_id += 1 # 增加会话 ID，让旧的 chat 线程失效
+        self.new_session() # 增加会话 ID，让旧的 chat 线程失效
 
     def shutdown(self):
         """关闭所有资源，确保程序安全退出"""
@@ -332,6 +321,8 @@ class Robot(ABC):
             else:
                 self.vad.set_threshold(self.vad.original_threshold)
 
+        vad_status = data.get("vad_statue")
+
         # 忽略连接初期的 VAD 信号，防止启动时的电磁噪声或模型初始化波动导致误触发
         if time.time() - self.connect_time < 0.5:
             if vad_status:
@@ -341,8 +332,6 @@ class Robot(ABC):
         # 识别到vad开始
         if self.vad_start:
             self.speech.append(data)
-        
-        vad_status = data.get("vad_statue")
         
         # 只有在有 vad_status 时才记录 debug 日志，避免太多无用信息
         if vad_status:
