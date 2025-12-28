@@ -48,6 +48,9 @@ logging.basicConfig(
 from bailing import robot
 from bailing.utils import read_config
 
+# 设置特定包的日志级别
+logging.getLogger("bailing").setLevel(logging.DEBUG)
+
 # 获取根 logger
 logger = logging.getLogger(__name__)
 
@@ -405,6 +408,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...), co
     
     # 关联 WebRTC (如果存在)
     pc = None
+    logger.debug(f"尝试关联 WebRTC: conn_id={connection_id}, pending_keys={list(getattr(app, 'pending_webrtc', {}).keys())}")
     if hasattr(app, "pending_webrtc") and connection_id in app.pending_webrtc:
         webrtc_data = app.pending_webrtc.pop(connection_id)
         pc = webrtc_data["pc"]

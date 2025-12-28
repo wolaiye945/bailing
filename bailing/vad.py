@@ -109,7 +109,7 @@ class FunASRVAD(VAD):
         Update the VAD threshold. For FunASR, we use it to gate output.
         """
         self.threshold = threshold
-        logger.debug(f"FunASR VAD threshold updated to: {threshold}")
+        # logger.debug(f"FunASR VAD threshold updated to: {threshold}")
 
 class SileroVAD(VAD):
     def __init__(self, config):
@@ -132,7 +132,7 @@ class SileroVAD(VAD):
         try:
             self.threshold = threshold
             self.vad_iterator.threshold = threshold
-            logger.debug(f"VAD threshold updated to: {threshold}")
+            # logger.debug(f"VAD threshold updated to: {threshold}")
         except Exception as e:
             logger.error(f"Error updating VAD threshold: {e}")
 
@@ -147,6 +147,11 @@ class SileroVAD(VAD):
     def is_vad(self, data):
         try:
             audio_int16 = np.frombuffer(data, dtype=np.int16)
+            # SileroVAD at 16kHz requires at least 512 samples
+            if len(audio_int16) < 512:
+                logger.debug(f"SileroVAD: chunk too short ({len(audio_int16)} samples), skipping")
+                return None
+                
             audio_float32 = self.int2float(audio_int16)
             vad_output = self.vad_iterator(torch.from_numpy(audio_float32))
             if vad_output is not None:

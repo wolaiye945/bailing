@@ -978,16 +978,72 @@
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
             });
 
+            pc.oniceconnectionstatechange = () => {
+                addLog(`WebRTC ICE 状态: ${pc.iceConnectionState}`, "info");
+            };
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    addLog("WebRTC: 发现新的 ICE 候选者", "debug");
+                }
+            };
+
             // 监听远程轨道
             pc.ontrack = (event) => {
                 if (event.track.kind === 'audio') {
                     addLog("WebRTC: 收到远程音频轨道", "info");
                     remoteTrack = event.track;
+                    
+                    addLog(`WebRTC 轨道状态: ${remoteTrack.readyState}, ID: ${remoteTrack.id}, muted: ${remoteTrack.muted}`, "info");
+                    
+                    // 启动统计监控
+                    if (window.statsInterval) clearInterval(window.statsInterval);
+                    window.statsInterval = setInterval(async () => {
+                        if (pc && pc.connectionState === 'connected') {
+                            const stats = await pc.getStats();
+                            stats.forEach(report => {
+                                if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                                    console.log(`WebRTC 收包统计: bytesReceived=${report.bytesReceived}, packetsReceived=${report.packetsReceived}`);
+                                    if (report.packetsReceived > 0 && (!window.lastPackets || report.packetsReceived > window.lastPackets)) {
+                                        // 仅在日志中记录显著变化
+                                        if (!window.lastPackets || report.packetsReceived - window.lastPackets > 50) {
+                                            addLog(`WebRTC 下行流量: ${report.packetsReceived} 包`, "debug");
+                                        }
+                                        window.lastPackets = report.packetsReceived;
+                                    }
+                                }
+                            });
+                        }
+                    }, 2000);
+                    
                     // 将远程轨道连接到全局分析器和输出
                     const remoteStream = new MediaStream([remoteTrack]);
+                    
+                    // 创建一个私有的 Audio 对象来确保播放
+                    const audioEl = new Audio();
+                    audioEl.srcObject = remoteStream;
+                    audioEl.play().catch(e => addLog("WebRTC: HTMLAudioElement 播放失败: " + e.message, "error"));
+                    
                     const source = globalAudioContext.createMediaStreamSource(remoteStream);
-                    source.connect(globalAnalyser);
-                    source.connect(globalAudioContext.destination);
+                    
+                    // 确保音量设置正确
+                    const gainNode = globalAudioContext.createGain();
+                    gainNode.gain.value = 1.0; 
+                    
+                    source.connect(gainNode);
+                    gainNode.connect(globalAnalyser);
+                    gainNode.connect(globalAudioContext.destination);
+                    
+                    addLog("WebRTC: 远程音频轨道已连接到输出 (音量 1.0)", "info");
+                    
+                    // 监听轨道结束
+                    remoteTrack.onended = () => {
+                        addLog("WebRTC: 远程音频轨道已结束", "warning");
+                    };
+                    
+                    // 监听轨道静音/取消静音
+                    remoteTrack.onmute = () => addLog("WebRTC: 远程音频轨道已静音", "warning");
+                    remoteTrack.onunmute = () => addLog("WebRTC: 远程音频轨道已恢复", "info");
                 }
             };
 
@@ -1004,8 +1060,28 @@
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
+            // 等待 ICE 收集完成 (Vanilla ICE)
+            addLog("WebRTC: 正在收集 ICE 候选者...", "debug");
+            await new Promise((resolve) => {
+                if (pc.iceGatheringState === 'complete') {
+                    resolve();
+                } else {
+                    const checkState = () => {
+                        if (pc.iceGatheringState === 'complete') {
+                            pc.removeEventListener('icegatheringstatechange', checkState);
+                            resolve();
+                        }
+                    };
+                    pc.addEventListener('icegatheringstatechange', checkState);
+                    // 10秒超时保护
+                    setTimeout(resolve, 10000);
+                }
+            });
+
             // 发送到服务器
-            const response = await fetch(`/offer?user_id=${getUserId()}&connection_id=${getConnId()}`, {
+            const conn_id = getConnId();
+            addLog(`WebRTC: 正在发送 Offer, conn_id=${conn_id}`, "debug");
+            const response = await fetch(`/offer?user_id=${getUserId()}&connection_id=${conn_id}`, {
                 method: 'POST',
                 body: JSON.stringify({
                     sdp: pc.localDescription.sdp,

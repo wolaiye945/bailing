@@ -103,8 +103,10 @@ class Robot(ABC):
         # 初始化线程池
         self.executor = ThreadPoolExecutor(max_workers=10)
         
+        logger.info("Robot.__init__: 准备调用 self._tts_priority()")
         # 启动 TTS 优先级队列处理线程
         self._tts_priority()
+        logger.info("Robot.__init__: self._tts_priority() 调用完成")
 
         # 初始化任务管理器
         self.task_queue = queue.Queue()
@@ -152,9 +154,15 @@ class Robot(ABC):
         # 初始化单例
         #rag.Rag(config["Rag"])  # 第一次初始化
 
-        if config["selected_module"]["Player"].lower().find("websocket") > -1:
+        # 如果 player 支持 init 方法，则进行初始化（主要用于注入 websocket 和 loop）
+        if hasattr(self.player, "init"):
             self.player.init(websocket, loop)
-            self.listen_dialogue(self.player.send_messages)
+        
+        # 如果是 WebSocket 或 WebRTC Player，需要监听对话以发送文本消息
+        player_name = config["selected_module"]["Player"].lower()
+        if "websocket" in player_name or "webrtc" in player_name:
+            if hasattr(self.player, "send_messages"):
+                self.listen_dialogue(self.player.send_messages)
 
     def _is_meaningful_query(self, query):
         """
@@ -211,6 +219,11 @@ class Robot(ABC):
                         data = self.nr.process(data)
                     
                     vad_statue = self.vad.is_vad(data)
+                    
+                    # 增加 VAD 状态详细日志
+                    if vad_statue:
+                        logger.info(f"VAD 状态更新: {vad_statue}")
+                    
                     self.vad_queue.put({"voice": data, "vad_statue": vad_statue})
                 except queue.Empty:
                     continue

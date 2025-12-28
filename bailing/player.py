@@ -55,14 +55,18 @@ class AbstractPlayer(object):
             return audio_file
 
     def _playing(self):
+        logger.info(f"Player {id(self)} _playing 线程已启动")
         while not self._stop_event.is_set():
             try:
                 data = self.play_queue.get(timeout=1.0)
+                logger.info(f"Player {id(self)} 从队列获取到数据: {data}")
             except queue.Empty:
                 continue
             self.is_playing = True
             try:
+                logger.info(f"Player {id(self)} 开始调用 do_playing: {data}")
                 self.do_playing(data)
+                logger.info(f"Player {id(self)} do_playing 调用完成: {data}")
             except Exception as e:
                 logger.error(f"播放音频失败: {e}")
             finally:
@@ -239,6 +243,10 @@ class WebSocketPlayer(AbstractPlayer):
         # 默认设置为已完成，防止第一次播放时卡住
         self._playback_finished_event.set()
 
+    def init(self, websocket, loop):
+        self.websocket = websocket
+        self.loop = loop
+
     def get_playing_status(self):
         """正在播放和队列非空，为正在播放状态"""
         return self.playing_status
@@ -352,6 +360,10 @@ class WebRTCPlayer(AbstractPlayer):
         self.loop = loop
         self.track = None
 
+    def init(self, websocket, loop):
+        self.websocket = websocket
+        self.loop = loop
+
     def set_track(self, track):
         self.track = track
 
@@ -370,6 +382,7 @@ class WebRTCPlayer(AbstractPlayer):
                 audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
                 pcm_data = audio.raw_data
                 
+            logger.debug(f"WebRTCPlayer 开始推送 PCM 数据: {len(pcm_data)} bytes")
             self.track.put_audio(pcm_data)
             logger.info(f"WebRTC 已推送音频流: {audio_file}")
 
