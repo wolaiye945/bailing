@@ -38,6 +38,12 @@ class ASR(ABC):
         """处理输入音频流并返回识别的文本，子类必须实现"""
         pass
 
+    async def async_recognizer(self, stream_in_audio, username=None):
+        """异步处理音频识别"""
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.recognizer, stream_in_audio, username)
+
 
 class FunASR(ASR):
     _model_instance = None

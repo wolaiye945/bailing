@@ -12,6 +12,20 @@ class LLM(ABC):
     def response(self, dialogue):
         pass
 
+    async def async_response(self, dialogue):
+        """Default implementation using executor for sync response"""
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.response, dialogue)
+
+    async def async_response_call(self, dialogue, functions_call):
+        """Default implementation using executor for sync response_call"""
+        import asyncio
+        loop = asyncio.get_event_loop()
+        # Note: wrapping a generator in an executor is complex, 
+        # so subclasses should ideally implement this natively if they support async.
+        raise NotImplementedError("Subclasses should implement async_response_call")
+
 
 class OpenAILLM(LLM):
     def __init__(self, config):
@@ -24,6 +38,29 @@ class OpenAILLM(LLM):
         self.presence_penalty = config.get("presence_penalty", 0.0)
         self.frequency_penalty = config.get("frequency_penalty", 0.0)
         self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+        self.async_client = openai.AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+
+    async def async_response_call(self, dialogue, functions_call):
+        try:
+            params = {
+                "model": self.model_name,
+                "messages": dialogue,
+                "stream": True,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+                "presence_penalty": self.presence_penalty,
+                "frequency_penalty": self.frequency_penalty
+            }
+            if functions_call:
+                params["tools"] = functions_call
+                
+            responses = await self.async_client.chat.completions.create(**params)
+            async for chunk in responses:
+                if chunk.choices:
+                    yield chunk.choices[0].delta.content, getattr(chunk.choices[0].delta, "tool_calls", None)
+        except Exception as e:
+            logger.error(f"Error in async response generation: {e}")
 
     def response(self, dialogue):
         try:

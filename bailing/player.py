@@ -70,9 +70,13 @@ class AbstractPlayer(object):
                 self.is_playing = False
 
     def play(self, data):
-        logger.info(f"play file {data}")
-        audio_file = self.to_wav(data)
-        self.play_queue.put(audio_file)
+        if isinstance(data, bytes):
+            logger.info(f"play from memory buffer ({len(data)} bytes)")
+            self.play_queue.put(data)
+        else:
+            logger.info(f"play file {data}")
+            audio_file = self.to_wav(data)
+            self.play_queue.put(audio_file)
 
     def stop(self):
         self._clear_queue()
@@ -119,10 +123,18 @@ class PyaudioPlayer(AbstractPlayer):
         super(PyaudioPlayer, self).__init__(*args, **kwargs)
         self.p = pyaudio.PyAudio()
 
-    def do_playing(self, audio_file):
+    def do_playing(self, audio_data):
         chunk = 1024
         try:
-            with wave.open(audio_file, 'rb') as wf:
+            import io
+            if isinstance(audio_data, bytes):
+                # 如果是字节数据，使用 io.BytesIO 包装
+                wf = wave.open(io.BytesIO(audio_data), 'rb')
+            else:
+                # 否则认为是文件路径
+                wf = wave.open(audio_data, 'rb')
+            
+            with wf:
                 stream = self.p.open(format=self.p.get_format_from_width(wf.getsampwidth()),
                                      channels=wf.getnchannels(),
                                      rate=wf.getframerate(),
@@ -133,7 +145,7 @@ class PyaudioPlayer(AbstractPlayer):
                     data = wf.readframes(chunk)
                 stream.stop_stream()
                 stream.close()
-            logger.debug(f"播放完成：{audio_file}")
+            logger.debug(f"播放完成")
         except Exception as e:
             logger.error(f"播放音频失败: {e}")
 
