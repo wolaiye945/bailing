@@ -642,6 +642,9 @@
         let globalAudioContext = null;
         let globalAnalyser = null;
         let frequencyData = null;
+        let pc = null; // WebRTC PeerConnection
+        let remoteTrack = null;
+        let silentAudio = null; // 用于背景运行的静音音频
         
         console.log("Your user_id is", userId, "conn_id is", connId);
 
@@ -970,10 +973,65 @@
             });
         }
 
+        async function negotiate() {
+            pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            // 监听远程轨道
+            pc.ontrack = (event) => {
+                if (event.track.kind === 'audio') {
+                    addLog("WebRTC: 收到远程音频轨道", "info");
+                    remoteTrack = event.track;
+                    // 将远程轨道连接到全局分析器和输出
+                    const remoteStream = new MediaStream([remoteTrack]);
+                    const source = globalAudioContext.createMediaStreamSource(remoteStream);
+                    source.connect(globalAnalyser);
+                    source.connect(globalAudioContext.destination);
+                }
+            };
+
+            // 获取本地麦克风并添加到 PC
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => pc.addTrack(track, stream));
+                addLog("WebRTC: 已添加本地音频轨道", "info");
+            } catch (e) {
+                addLog("WebRTC: 获取麦克风失败: " + e.message, "error");
+            }
+
+            // 创建 Offer
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            // 发送到服务器
+            const response = await fetch(`/offer?user_id=${getUserId()}&connection_id=${getConnId()}`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    sdp: pc.localDescription.sdp,
+                    type: pc.localDescription.type
+                }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const answer = await response.json();
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            addLog("WebRTC: 协商完成", "info");
+        }
+
         async function connect() {
             // 在用户点击 connect 时，立即尝试初始化和恢复 AudioContext
             // 这是绕过浏览器自动播放限制的最有效时机
             initAudioContext();
+            initMediaSession();
+            startSilentAudio();
+            
+            // 首先进行 WebRTC 协商
+            try {
+                await negotiate();
+            } catch (e) {
+                addLog("WebRTC 协商失败，尝试降级到 WebSocket: " + e.message, "warning");
+            }
             
             // isManuallyStopped 只在 connect 内部作为判断，确保点击开始时能重置它
             if (isManuallyStopped) {
@@ -1064,6 +1122,10 @@
                     addLog(`连接已关闭 (代码: ${event.code})`);
                     if (recorder) recorder.stop();
                     if (player) player.stopCurrent(); // 确保停止时也停止当前播放
+                    if (pc) {
+                        pc.close();
+                        pc = null;
+                    }
                     
                     if (!isManuallyStopped && reconnectAttempts < maxReconnectAttempts) {
                         reconnectAttempts++;
@@ -1408,6 +1470,41 @@
             }, 100);
         }
 
+        function initMediaSession() {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: '百聆 (BaiLing)',
+                    artist: 'AI 语音助手',
+                    album: '实时对话',
+                    artwork: [
+                        { src: 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/svgs/solid/feather-alt.svg', sizes: '96x96', type: 'image/svg+xml' }
+                    ]
+                });
+
+                navigator.mediaSession.setActionHandler('play', () => {
+                    addLog("MediaSession: 播放", "info");
+                    if (globalAudioContext) globalAudioContext.resume();
+                });
+                navigator.mediaSession.setActionHandler('pause', () => {
+                    addLog("MediaSession: 暂停", "info");
+                });
+                navigator.mediaSession.setActionHandler('stop', () => {
+                    addLog("MediaSession: 停止", "info");
+                    if (typeof stopBtn !== 'undefined') stopBtn.click();
+                });
+            }
+        }
+
+        function startSilentAudio() {
+            if (!silentAudio) {
+                silentAudio = document.createElement('audio');
+                silentAudio.loop = true;
+                // 使用一个极短的静音 base64 音频
+                silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFav7//v8BAAgAZGF0YQAAAAA=';
+                silentAudio.play().catch(e => console.log("静音音频播放失败，等待交互", e));
+            }
+        }
+
         function initAudioContext() {
             try {
                 if (!globalAudioContext) {
@@ -1468,6 +1565,10 @@
             }
 
             async playAudio(audioData) {
+                if (pc) {
+                    // WebRTC 模式下，音频直接从 remoteTrack 播放，跳过 WebSocket 数据
+                    return;
+                }
                 if (!audioData || audioData.byteLength === 0) {
                     this.addLog("收到空音频数据，跳过");
                     return;
@@ -1756,13 +1857,19 @@
                         let int16Buffer = this.floatTo16BitPCM(downsampledBuffer);
 
                         // 发送二进制数据
-                        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                        if (!pc && this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                             this.websocket.send(int16Buffer.buffer);
                             
                             // 每发送 100 帧记录一次日志，避免刷屏但能确认在运行
                             frameCount++;
                             if (frameCount % 100 === 0) {
-                                this.addLog(`正在传输语音数据... (已发送 ${frameCount} 帧)`, 'debug');
+                                this.addLog(`正在通过 WebSocket 传输语音数据... (已发送 ${frameCount} 帧)`, 'debug');
+                            }
+                        } else if (pc) {
+                            // WebRTC 下，音频通过 pc.addTrack 自动传输，无需手动发送
+                            frameCount++;
+                            if (frameCount % 100 === 0) {
+                                this.addLog(`正在通过 WebRTC 传输语音数据... (已发送 ${frameCount} 帧)`, 'debug');
                             }
                         }
                     };
@@ -1829,6 +1936,14 @@
             isManuallyStopped = true;
             if (websocket) websocket.close();
             if (recorder) recorder.stop();
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            if (silentAudio) {
+                silentAudio.pause();
+                silentAudio = null;
+            }
             updateStatus("disconnected", "已手动停止");
             startBtn.disabled = false;
             stopBtn.disabled = true;

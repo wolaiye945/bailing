@@ -230,21 +230,14 @@ class SoundDevicePlayer(AbstractPlayer):
         sd.stop()
 
 class WebSocketPlayer(AbstractPlayer):
-    """通过WebSocket发送音频到前端"""
-
-    def __init__(self, *args, **kwargs):
-        super(WebSocketPlayer, self).__init__(*args, **kwargs)
-
-        self.websocket = None
-        self.loop = None
-        self.playing_status = False
-        self.lock = threading.Lock()  # 添加线程锁
-        self._playback_finished_event = threading.Event()
-        self._playback_finished_event.set()
-
-    def init(self, websocket: WebSocket, loop):
+    def __init__(self, config, websocket=None, loop=None):
+        super(WebSocketPlayer, self).__init__()
         self.websocket = websocket
         self.loop = loop
+        self.playing_status = False
+        self._playback_finished_event = threading.Event()
+        # 默认设置为已完成，防止第一次播放时卡住
+        self._playback_finished_event.set()
 
     def get_playing_status(self):
         """正在播放和队列非空，为正在播放状态"""
@@ -349,22 +342,65 @@ class WebSocketPlayer(AbstractPlayer):
                 self.loop
             )
         except Exception as e:
-            logger.error(f"发送状态更新失败: {e}")
+            logger.error(f"发送状态失败: {e}")
 
-    def stop(self):
-        """停止播放器"""
+
+class WebRTCPlayer(AbstractPlayer):
+    def __init__(self, config, websocket=None, loop=None):
+        super(WebRTCPlayer, self).__init__()
+        self.websocket = websocket  # 仍然需要 WebSocket 发送文本消息
+        self.loop = loop
+        self.track = None
+
+    def set_track(self, track):
+        self.track = track
+
+    def do_playing(self, audio_file):
+        if not self.track:
+            logger.warning("WebRTC 轨道未设置，无法播放")
+            return
+
         try:
-            if self.websocket and self.websocket.client_state.value == 1:  # 1 = CONNECTED
-                asyncio.run_coroutine_threadsafe(
-                    self.websocket.send_text(json.dumps({"type": "interrupt"})),
-                    self.loop
-                )
-            #     await self.websocket.send_text(json.dumps({"type": "interrupt"}))
-            #     # 关闭连接
-            #     await self.websocket.close()
-            # self.websocket = None
+            # 转换并读取 PCM 数据
+            # WebRTC 最好直接推流，不需要等待前端完成，因为 WebRTC 本身是流式的
+            with open(audio_file, "rb") as f:
+                # 假设 TTS 生成的是 wav，我们需要 PCM 数据
+                # 这里简单处理，实际上应该用 pydub 转成 16k mono
+                audio = AudioSegment.from_file(audio_file)
+                audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+                pcm_data = audio.raw_data
+                
+            self.track.put_audio(pcm_data)
+            logger.info(f"WebRTC 已推送音频流: {audio_file}")
+
         except Exception as e:
-            logger.error(f"停止播放器失败: {e}")
+            logger.error(f"WebRTCPlayer 播放任务异常: {e}")
+
+    def interrupt(self):
+        if self.websocket:
+            asyncio.run_coroutine_threadsafe(
+                self.websocket.send_text(json.dumps({"type": "interrupt"})),
+                self.loop
+            )
+
+    def send_messages(self, messages):
+        if self.websocket:
+            data = {
+                "type": "update_dialogue",
+                "data": messages if isinstance(messages, list) else [messages]
+            }
+            asyncio.run_coroutine_threadsafe(
+                self.websocket.send_text(json.dumps(data)),
+                self.loop
+            )
+
+    def send_status(self, status):
+        if self.websocket:
+            data = {"type": "status_update", "status": status}
+            asyncio.run_coroutine_threadsafe(
+                self.websocket.send_text(json.dumps(data)),
+                self.loop
+            )
 
 
 def create_instance(class_name, *args, **kwargs):

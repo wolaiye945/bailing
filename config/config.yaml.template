@@ -39,18 +39,24 @@ EOQ:
   llm_judge: false # 暂不开启 LLM 语义判断，优先保证响应速度
 # 具体处理时选择的模块
 selected_module:
-  Recorder: WebSocketRecorder
+  Recorder: WebRTCRecorder
   ASR: FunASR
   VAD: SileroVAD
   LLM: OpenAILLM
   TTS: KOKOROTTS
-  Player: WebSocketPlayer
+  Player: WebRTCPlayer
 
 Recorder:
   RecorderPyAudio:
     output_file: tmp/
   WebSocketRecorder:
     output_file: tmp/
+  WebRTCRecorder:
+    output_file: tmp/
+
+Player:
+  WebSocketPlayer: {}
+  WebRTCPlayer: {}
 
 
 ASR:

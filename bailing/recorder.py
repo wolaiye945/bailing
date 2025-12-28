@@ -127,6 +127,33 @@ class WebSocketRecorder(AbstractRecorder):
         logger.info("录音已停止")
 
 
+class WebRTCRecorder(AbstractRecorder):
+    """通过WebRTC接收前端音频"""
+
+    def __init__(self, config):
+        self.running = False
+        self.audio_queue: queue.Queue = None
+        self.track = None
+
+    def set_track(self, track):
+        self.track = track
+        if self.audio_queue:
+            self.track.audio_queue = self.audio_queue
+
+    def start_recording(self, audio_queue: queue.Queue):
+        self.audio_queue = audio_queue
+        self.running = True
+        if self.track:
+            self.track.audio_queue = self.audio_queue
+        logger.info("WebRTCRecorder 已启动")
+
+    def stop_recording(self):
+        self.running = False
+        if self.track:
+            self.track.audio_queue = None
+        logger.info("WebRTCRecorder 已停止")
+
+
 
 
 def create_instance(class_name, *args, **kwargs):

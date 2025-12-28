@@ -19,6 +19,9 @@ import shutil
 import re
 from typing import Dict, Tuple, List
 
+from aiortc import RTCPeerConnection, RTCSessionDescription
+from bailing.webrtc import AudioTransformTrack
+
 
 parser = argparse.ArgumentParser(description="Description of your script.")
 
@@ -73,19 +76,25 @@ SECRET_KEY = security_config.get("secret_key", "bailing_secret_key_change_me")
 
 
 TIMEOUT = 600  # 600 秒不活跃断开
-# active_robots: Dict[connection_id, [robot_instance, timestamp, user_info]]
+# active_robots: Dict[connection_id, [robot_instance, timestamp, user_info, pc]]
 active_robots: Dict[str, list] = {}
 
 async def cleanup_task():
     while True:
         now = time.time()
         for conn_id, robot_data in list(active_robots.items()):
-            robot_instance, ts, _ = robot_data
+            # 处理 4 个元素的列表 (加上了 pc)
+            robot_instance = robot_data[0]
+            ts = robot_data[1]
+            pc = robot_data[3] if len(robot_data) > 3 else None
+            
             if now - ts > TIMEOUT:
                 try:
                     robot_instance.recorder.stop_recording()
                     robot_instance.shutdown()
-                    logger.info(f"连接 {conn_id} 对应的robot因超时已释放")
+                    if pc:
+                        asyncio.create_task(pc.close())
+                    logger.info(f"连接 {conn_id} 对应的robot及WebRTC因超时已释放")
                 except Exception as e:
                     logger.info(f"连接 {conn_id} 对应的robot释放出错: {e}")
                 active_robots.pop(conn_id, None)
@@ -99,6 +108,44 @@ async def lifespan(app: FastAPI):
     await task
 
 app = FastAPI(lifespan=lifespan)
+app.pending_webrtc = {}
+
+@app.post("/offer")
+async def offer(request: Request, user_id: str = Query(...), connection_id: str = Query(None)):
+    params = await request.json()
+    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+
+    pc = RTCPeerConnection()
+    
+    # 如果没有提供 connection_id，生成一个
+    if not connection_id:
+        connection_id = f"{user_id}_{int(time.time()*1000)}"
+
+    track = AudioTransformTrack()
+    
+    @pc.on("track")
+    def on_track(incoming_track):
+        if incoming_track.kind == "audio":
+            track.track = incoming_track
+            logger.info(f"WebRTC 收到音频轨道: {connection_id}")
+
+    await pc.setRemoteDescription(offer)
+    pc.addTrack(track)
+    
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    
+    # 存储待处理的 WebRTC 连接
+    app.pending_webrtc[connection_id] = {
+        "pc": pc,
+        "track": track
+    }
+    
+    return JSONResponse({
+        "sdp": pc.localDescription.sdp,
+        "type": pc.localDescription.type,
+        "connection_id": connection_id
+    })
 
 # 允许跨域
 app.add_middleware(
@@ -355,7 +402,25 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...), co
 
     # 创建新的 robot 实例
     robot_instance = robot.Robot(config_path, websocket, loop, user_info)
-    active_robots[connection_id] = [robot_instance, time.time(), user_info]
+    
+    # 关联 WebRTC (如果存在)
+    pc = None
+    if hasattr(app, "pending_webrtc") and connection_id in app.pending_webrtc:
+        webrtc_data = app.pending_webrtc.pop(connection_id)
+        pc = webrtc_data["pc"]
+        track = webrtc_data["track"]
+        
+        # 如果 Robot 配置了 WebRTCRecorder/Player，则设置 track
+        if hasattr(robot_instance.recorder, "set_track"):
+            robot_instance.recorder.set_track(track)
+            # 启动输入循环
+            asyncio.create_task(track.start_input_loop())
+            
+        if hasattr(robot_instance.player, "set_track"):
+            robot_instance.player.set_track(track)
+        logger.info(f"Robot 已关联 WebRTC 轨道: conn_id={connection_id}")
+
+    active_robots[connection_id] = [robot_instance, time.time(), user_info, pc]
     logger.info(f"创建新 Robot 实例: user_id={user_id}, conn_id={connection_id}, robot_id={id(robot_instance)}")
     
     # 启动 robot 运行线程
@@ -418,6 +483,13 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(...), co
         try:
             if robot_instance:
                 robot_instance.shutdown()
+            
+            # 关闭 WebRTC
+            if active_robots.get(connection_id) and len(active_robots[connection_id]) > 3:
+                pc = active_robots[connection_id][3]
+                if pc:
+                    asyncio.create_task(pc.close())
+
             # 只有当 active_robots 中的实例还是当前这个时才删除
             if active_robots.get(connection_id) and active_robots[connection_id][0] is robot_instance:
                 active_robots.pop(connection_id, None)
