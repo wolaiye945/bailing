@@ -974,8 +974,14 @@
         }
 
         async function negotiate() {
+            // 如果在局域网或服务器有公网IP，可以尝试将 iceServers 设为空数组 [] 以完全禁用 STUN，从而实现零延迟连接
             pc = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                iceServers: [
+                    // { urls: 'stun:stun.l.google.com:19302' },
+                    // { urls: 'stun:stun1.l.google.com:19302' },
+                    // { urls: 'stun:stun.miwifi.com:3478' },
+                    // { urls: 'stun:stun.qq.com:3478' }
+                ]
             });
 
             pc.oniceconnectionstatechange = () => {
@@ -984,7 +990,13 @@
 
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
-                    addLog("WebRTC: 发现新的 ICE 候选者", "debug");
+                    addLog("WebRTC: 发现新的 ICE 候选者，正在发送...", "debug");
+                    const conn_id = getConnId();
+                    fetch(`/candidate?connection_id=${conn_id}`, {
+                        method: 'POST',
+                        body: JSON.stringify({ candidate: event.candidate }),
+                        headers: { 'Content-Type': 'application/json' }
+                    }).catch(e => console.error("发送候选者失败:", e));
                 }
             };
 
@@ -1060,27 +1072,9 @@
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
-            // 等待 ICE 收集完成 (Vanilla ICE)
-            addLog("WebRTC: 正在收集 ICE 候选者...", "debug");
-            await new Promise((resolve) => {
-                if (pc.iceGatheringState === 'complete') {
-                    resolve();
-                } else {
-                    const checkState = () => {
-                        if (pc.iceGatheringState === 'complete') {
-                            pc.removeEventListener('icegatheringstatechange', checkState);
-                            resolve();
-                        }
-                    };
-                    pc.addEventListener('icegatheringstatechange', checkState);
-                    // 10秒超时保护
-                    setTimeout(resolve, 10000);
-                }
-            });
-
-            // 发送到服务器
+            // Trickle ICE: 不再等待候选者收集，立即发送 Offer
             const conn_id = getConnId();
-            addLog(`WebRTC: 正在发送 Offer, conn_id=${conn_id}`, "debug");
+            addLog(`WebRTC: 正在发送 Offer (Trickle ICE), conn_id=${conn_id}`, "debug");
             const response = await fetch(`/offer?user_id=${getUserId()}&connection_id=${conn_id}`, {
                 method: 'POST',
                 body: JSON.stringify({
@@ -1992,6 +1986,21 @@
             }
         }
 
+
+        // 预获取麦克风权限
+        async function preWarmMedia() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // 立即停止，仅为了获取权限
+                stream.getTracks().forEach(track => track.stop());
+                addLog("WebRTC: 麦克风权限预热成功", "debug");
+            } catch (e) {
+                console.warn("Media pre-warm failed:", e);
+            }
+        }
+
+        // 页面加载后尝试预热
+        window.addEventListener('DOMContentLoaded', preWarmMedia);
 
         startBtn.addEventListener('click', async () => {
             // 在用户交互时初始化音频上下文，解决自动播放限制

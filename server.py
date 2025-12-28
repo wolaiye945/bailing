@@ -19,7 +19,8 @@ import shutil
 import re
 from typing import Dict, Tuple, List
 
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+from aiortc.sdp import candidate_from_sdp
 from bailing.webrtc import AudioTransformTrack
 
 
@@ -149,6 +150,31 @@ async def offer(request: Request, user_id: str = Query(...), connection_id: str 
         "type": pc.localDescription.type,
         "connection_id": connection_id
     })
+
+@app.post("/candidate")
+async def candidate(request: Request, connection_id: str = Query(...)):
+    params = await request.json()
+    
+    # 从待处理或已激活的连接中查找 pc
+    pc = None
+    if connection_id in app.pending_webrtc:
+        pc = app.pending_webrtc[connection_id]["pc"]
+    elif connection_id in active_robots:
+        pc = active_robots[connection_id][3] if len(active_robots[connection_id]) > 3 else None
+        
+    if pc:
+        candidate_dict = params.get("candidate")
+        if candidate_dict and "candidate" in candidate_dict:
+            try:
+                # 使用 aiortc.sdp.candidate_from_sdp 解析候选者字符串
+                cand = candidate_from_sdp(candidate_dict["candidate"])
+                cand.sdpMid = candidate_dict.get("sdpMid")
+                cand.sdpMLineIndex = candidate_dict.get("sdpMLineIndex")
+                await pc.addIceCandidate(cand)
+            except Exception as e:
+                logger.warning(f"添加 ICE 候选者失败: {e}")
+    
+    return JSONResponse({"status": "ok"})
 
 # 允许跨域
 app.add_middleware(
